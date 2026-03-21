@@ -1,3 +1,13 @@
+export interface DayPlanningStatus {
+  local_date: string;
+  has_tasks: boolean;
+  task_count: number;
+  has_sessions: boolean;
+  session_count: number;
+  needs_planning: boolean;
+  suggest_tomorrow: boolean;
+}
+
 export interface Session {
   id: string;
   started_at: string;

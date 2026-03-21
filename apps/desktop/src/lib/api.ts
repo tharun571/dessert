@@ -1,12 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   Session, Task, Reward, InventoryItem, ScoreEvent, DayScore, AllRules,
-  CreateTaskInput, CreateRewardInput,
+  CreateTaskInput, CreateRewardInput, DayPlanningStatus,
 } from './types';
 
 // Sessions
-export const sessionStart = (plannedMinutes?: number, title?: string) =>
-  invoke<Session>('session_start', { plannedMinutes, title });
+export const sessionStart = (plannedMinutes?: number, title?: string, localDate?: string) =>
+  invoke<Session>('session_start', { plannedMinutes, title, localDate: localDate ?? new Date().toISOString().slice(0, 10) });
+
+export const dayPlanningStatus = (localDate: string, localTomorrowDate: string, hour: number) =>
+  invoke<DayPlanningStatus>('day_planning_status', { localDate, localTomorrowDate, hour });
 
 export const sessionPause = (sessionId: string) =>
   invoke<Session>('session_pause', { sessionId });
@@ -93,6 +96,8 @@ export const trackerGetStatus = () =>
 
 // Helpers
 export const todayDate = () => new Date().toISOString().slice(0, 10);
+
+export const currentHour = () => new Date().getHours();
 
 export const tomorrowDate = () => {
   const d = new Date();

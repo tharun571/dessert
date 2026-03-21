@@ -1,4 +1,4 @@
-use crate::models::Session;
+use crate::models::{Session, DayPlanningStatus};
 use crate::AppState;
 use tauri::State;
 use uuid::Uuid;
@@ -30,8 +30,27 @@ pub fn session_start(
     state: State<AppState>,
     planned_minutes: Option<i32>,
     title: Option<String>,
+    local_date: String,
 ) -> Result<Session, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Gate: require at least one task to exist for today before the first session
+    let task_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE planned_for=?1 AND status IN ('planned','done')",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let session_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE date(started_at)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    if task_count == 0 && session_count == 0 {
+        return Err("plan your day first! add at least one quest before starting a session.".to_string());
+    }
+
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
 
@@ -121,4 +140,42 @@ pub fn session_list_for_day(state: State<AppState>, date: String) -> Result<Vec<
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());
     result
+}
+
+#[tauri::command]
+pub fn day_planning_status(
+    state: State<AppState>,
+    local_date: String,
+    local_tomorrow_date: String,
+    hour: i32,
+) -> Result<DayPlanningStatus, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let task_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE planned_for=?1 AND status IN ('planned','done')",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let session_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE date(started_at)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let tomorrow_task_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE planned_for=?1 AND status IN ('planned','done')",
+        rusqlite::params![local_tomorrow_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    Ok(DayPlanningStatus {
+        local_date,
+        has_tasks: task_count > 0,
+        task_count,
+        has_sessions: session_count > 0,
+        session_count,
+        needs_planning: task_count == 0 && session_count == 0,
+        suggest_tomorrow: hour >= 17 && tomorrow_task_count == 0,
+    })
 }

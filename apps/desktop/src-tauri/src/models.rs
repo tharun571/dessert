@@ -1,6 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DayPlanningStatus {
+    pub local_date: String,
+    pub has_tasks: bool,
+    pub task_count: i32,
+    pub has_sessions: bool,
+    pub session_count: i32,
+    pub needs_planning: bool,
+    pub suggest_tomorrow: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub started_at: String,

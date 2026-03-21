@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   sessionGetCurrent, sessionStart, sessionStop, sessionPause, sessionResume,
-  taskListForDate, taskMarkDone, rewardList, rewardPurchase, trackerGetStatus, todayDate,
+  taskListForDate, taskCreate, taskMarkDone, rewardList, rewardPurchase, trackerGetStatus,
+  todayDate, tomorrowDate, currentHour, dayPlanningStatus,
 } from '../../lib/api';
-import type { Session, Task, Reward, TrackerStatus } from '../../lib/types';
-import { playClick, playSuccess, playPurchase, playError } from '../../lib/sounds';
+import type { Session, Task, Reward, TrackerStatus, DayPlanningStatus } from '../../lib/types';
+import { playClick, playSuccess, playPurchase, playError, playComplete } from '../../lib/sounds';
 
 function formatDuration(startedAt: string): string {
   const start = new Date(startedAt).getTime();
@@ -21,6 +22,7 @@ export default function SessionView() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [trackerStatus, setTrackerStatus] = useState<TrackerStatus | null>(null);
+  const [planning, setPlanning] = useState<DayPlanningStatus | null>(null);
   const [timer, setTimer] = useState('00:00');
   const [title, setTitle] = useState('');
   const [minutes, setMinutes] = useState('');
@@ -30,18 +32,29 @@ export default function SessionView() {
   const [loading, setLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Inline planning form (shown when gate is active on this page)
+  const [questTitle, setQuestTitle] = useState('');
+  const [questMinutes, setQuestMinutes] = useState('');
+  const [questMainQuest, setQuestMainQuest] = useState(false);
+
+  const today = todayDate();
+  const tomorrow = tomorrowDate();
+  const hour = currentHour();
+
   const refresh = useCallback(async () => {
-    const [s, t, r, ts] = await Promise.all([
+    const [s, t, r, ts, plan] = await Promise.all([
       sessionGetCurrent(),
-      taskListForDate(todayDate()),
+      taskListForDate(today),
       rewardList(),
       trackerGetStatus(),
+      dayPlanningStatus(today, tomorrow, hour),
     ]);
     setSession(s);
     setTasks(t);
     setRewards(r);
     setTrackerStatus(ts);
-  }, []);
+    setPlanning(plan);
+  }, [today, tomorrow, hour]);
 
   useEffect(() => {
     refresh();
@@ -82,8 +95,24 @@ export default function SessionView() {
     }
   };
 
+  const handleAddQuest = async () => {
+    if (!questTitle.trim()) return;
+    playClick();
+    await taskCreate({
+      title: questTitle.trim(),
+      planned_for: today,
+      estimated_minutes: questMinutes ? parseInt(questMinutes) : undefined,
+      is_main_quest: questMainQuest,
+    });
+    playComplete();
+    setQuestTitle('');
+    setQuestMinutes('');
+    setQuestMainQuest(false);
+    await refresh();
+  };
+
   const handleStart = () => run(async () => {
-    const s = await sessionStart(minutes ? parseInt(minutes) : undefined, title || undefined);
+    const s = await sessionStart(minutes ? parseInt(minutes) : undefined, title || undefined, today);
     setSession(s);
     setShowStart(false);
     setTitle('');
@@ -196,6 +225,71 @@ export default function SessionView() {
               ⏹ stop session
             </button>
           </div>
+        </div>
+      ) : planning?.needs_planning ? (
+        /* Planning gate */
+        <div className="bg-zinc-900/60 border border-orange-500/20 rounded-2xl p-6 mb-6 card-glow-orange">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">🌅</span>
+            <p className="text-sm font-semibold text-orange-300">plan today's quests first</p>
+          </div>
+          <p className="text-xs text-zinc-500 mb-4">add at least one quest to unlock session start</p>
+          {tasks.filter(t => t.status === 'planned').length > 0 && (
+            <div className="space-y-1.5 mb-4">
+              {tasks.filter(t => t.status === 'planned').map(t => (
+                <div key={t.id} className="flex items-center gap-2 text-sm text-zinc-300">
+                  <span className="text-emerald-400 text-xs">✓</span>
+                  <span>{t.is_main_quest && '⭐ '}{t.title}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="space-y-2 mb-3">
+            <input
+              autoFocus
+              className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500/60 transition-colors"
+              placeholder="what's the quest?"
+              value={questTitle}
+              onChange={e => setQuestTitle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddQuest()}
+            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-500/60 transition-colors"
+                placeholder="minutes (optional)"
+                value={questMinutes}
+                onChange={e => setQuestMinutes(e.target.value)}
+              />
+              <button
+                onClick={() => { playClick(); setQuestMainQuest(!questMainQuest); }}
+                className={`px-3 py-2 rounded-xl text-sm transition-all ${
+                  questMainQuest
+                    ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300'
+                    : 'bg-white/5 border border-white/10 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                ⭐
+              </button>
+              <button
+                onClick={handleAddQuest}
+                disabled={!questTitle.trim()}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)' }}
+              >
+                add
+              </button>
+            </div>
+          </div>
+          {tasks.filter(t => t.status === 'planned').length > 0 && (
+            <button
+              onClick={() => { playClick(); setShowStart(true); }}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] btn-glow-orange"
+              style={{ background: 'linear-gradient(135deg, #f97316 0%, #fb923c 50%, #fbbf24 100%)' }}
+            >
+              ⚡ start session
+            </button>
+          )}
         </div>
       ) : showStart ? (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 mb-6">

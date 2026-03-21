@@ -51,6 +51,7 @@ pub fn run() {
             commands::sessions::session_stop,
             commands::sessions::session_get_current,
             commands::sessions::session_list_for_day,
+            commands::sessions::day_planning_status,
             commands::tasks::task_create,
             commands::tasks::task_update,
             commands::tasks::task_mark_done,
