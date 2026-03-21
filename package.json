@@ -1,0 +1,8 @@
+{
+  "name": "dessert-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build"
+  }
+}

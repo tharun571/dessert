@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "dessert tracker",
+  "version": "1.0.0",
+  "description": "tracks browser activity for the dessert productivity app",
+  "permissions": ["tabs", "scripting", "alarms"],
+  "host_permissions": [
+    "http://127.0.0.1:43137/*",
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://www.linkedin.com/*",
+    "https://www.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.youtube.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "dessert tracker"
+  }
+}
