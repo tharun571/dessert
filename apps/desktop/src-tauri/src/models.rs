@@ -11,6 +11,15 @@ pub struct DayPlanningStatus {
     pub suggest_tomorrow: bool,
     /// true if it's morning (hour < 12), first session of the day, and sunlight not yet logged
     pub ask_sunlight: bool,
+    /// true if sunlight was already logged today
+    pub sunlight_done: bool,
+    /// true if it's evening (hour >= 18), first evening session, and gym not yet logged
+    pub ask_gym: bool,
+    /// true if gym was already logged today
+    pub gym_done: bool,
+    pub book_done: bool,
+    pub walk_done: bool,
+    pub no_outside_food_done: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +126,11 @@ pub struct DayScore {
 pub struct OverallScore {
     pub total: i32,
     pub days: i32,
+    pub earned: i32,
+    pub lost: i32,
+    pub spent: i32,
+    pub sessions_completed: i32,
+    pub tasks_completed: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

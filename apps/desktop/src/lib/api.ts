@@ -14,6 +14,18 @@ export const dayPlanningStatus = (localDate: string, localTomorrowDate: string, 
 export const logSunlight = (localDate: string) =>
   invoke<void>('log_sunlight', { localDate });
 
+export const logGym = (localDate: string) =>
+  invoke<void>('log_gym', { localDate });
+
+export const logBook = (localDate: string) =>
+  invoke<void>('log_book', { localDate });
+
+export const logWalk = (localDate: string) =>
+  invoke<void>('log_walk', { localDate });
+
+export const logNoOutsideFood = (localDate: string) =>
+  invoke<void>('log_no_outside_food', { localDate });
+
 export const sessionPause = (sessionId: string) =>
   invoke<Session>('session_pause', { sessionId });
 
@@ -72,6 +84,9 @@ export const rewardPurchase = (rewardId: string, purchaseSessionId?: string) =>
 
 export const inventoryListAvailable = () =>
   invoke<InventoryItem[]>('inventory_list_available');
+
+export const inventoryListConsumed = () =>
+  invoke<InventoryItem[]>('inventory_list_consumed');
 
 export const inventoryConsume = (itemId: string, consumeSessionId?: string) =>
   invoke<InventoryItem>('inventory_consume', { itemId, consumeSessionId });

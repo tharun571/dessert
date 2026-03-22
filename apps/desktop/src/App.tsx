@@ -12,7 +12,7 @@ type Page = 'home' | 'tasks' | 'rewards' | 'inventory' | 'timeline' | 'settings'
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'home', label: 'home', icon: '🏠' },
   { id: 'tasks', label: 'quests', icon: '📋' },
-  { id: 'rewards', label: 'shop', icon: '🍨' },
+  { id: 'rewards', label: 'desserts', icon: '🍨' },
   { id: 'inventory', label: 'inventory', icon: '🎒' },
   { id: 'timeline', label: 'timeline', icon: '📊' },
   { id: 'settings', label: 'settings', icon: '⚙️' },

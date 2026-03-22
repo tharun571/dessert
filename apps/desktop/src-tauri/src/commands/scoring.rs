@@ -62,7 +62,37 @@ pub fn score_get_overall(state: State<AppState>) -> Result<OverallScore, String>
         |r| r.get(0),
     ).map_err(|e| e.to_string())?;
 
-    Ok(OverallScore { total, days })
+    let earned: i32 = db.query_row(
+        "SELECT COALESCE(SUM(delta), 0) FROM score_events WHERE delta > 0 AND reason_code != 'reward_purchased'",
+        [],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let lost: i32 = db.query_row(
+        "SELECT COALESCE(SUM(ABS(delta)), 0) FROM score_events WHERE delta < 0 AND reason_code != 'reward_purchased'",
+        [],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let spent: i32 = db.query_row(
+        "SELECT COALESCE(SUM(ABS(delta)), 0) FROM score_events WHERE reason_code = 'reward_purchased'",
+        [],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let sessions_completed: i32 = db.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE state = 'ended'",
+        [],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let tasks_completed: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code IN ('task_completed', 'main_quest_completed')",
+        [],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(OverallScore { total, days, earned, lost, spent, sessions_completed, tasks_completed })
 }
 
 #[tauri::command]

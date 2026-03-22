@@ -188,6 +188,21 @@ pub fn reward_purchase(
 }
 
 #[tauri::command]
+pub fn inventory_list_consumed(state: State<AppState>) -> Result<Vec<InventoryItem>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut stmt = db.prepare(
+        "SELECT i.id, i.reward_id, r.name, r.cost, i.purchased_at, i.consumed_at, i.status, i.purchase_session_id, i.consume_session_id
+         FROM inventory_items i JOIN rewards r ON r.id=i.reward_id
+         WHERE i.status='consumed' ORDER BY i.consumed_at DESC LIMIT 50"
+    ).map_err(|e| e.to_string())?;
+    let result = stmt.query_map([], row_to_inventory)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string());
+    result
+}
+
+#[tauri::command]
 pub fn inventory_list_available(state: State<AppState>) -> Result<Vec<InventoryItem>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db.prepare(

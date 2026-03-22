@@ -3,7 +3,7 @@ import {
   scoreGetToday, scoreGetOverall, sessionGetCurrent, taskListForDate, taskCreate, taskMarkDone,
   sessionStart, sessionStop, sessionPause, sessionResume, sessionEndStats, trackerGetStatus,
   todayDate, tomorrowDate, currentHour,
-  dayPlanningStatus, logSunlight,
+  dayPlanningStatus, logSunlight, logGym,
 } from '../../lib/api';
 import type { DayScore, OverallScore, Session, Task, TrackerStatus, DayPlanningStatus, SessionEndStats } from '../../lib/types';
 import { playClick, playSuccess, playError, playComplete, playCelebrate } from '../../lib/sounds';
@@ -50,6 +50,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
 
   const [dismissedTomorrow, setDismissedTomorrow] = useState(false);
   const [sunlightAnswered, setSunlightAnswered] = useState(false);
+  const [gymAnswered, setGymAnswered] = useState(false);
   const [endedSession, setEndedSession] = useState<Session | null>(null);
   const [endStats, setEndStats] = useState<SessionEndStats | null>(null);
 
@@ -161,6 +162,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
   const plannedTasks = tasks.filter(t => t.status === 'planned');
   const needsPlanning = planning?.needs_planning ?? false;
   const askSunlight = !sunlightAnswered && (planning?.ask_sunlight ?? false);
+  const askGym = !gymAnswered && (planning?.ask_gym ?? false);
   const showTomorrowPrompt = !dismissedTomorrow && (planning?.suggest_tomorrow ?? false) && !session;
 
   return (
@@ -312,6 +314,23 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
             </button>
           </div>
         </div>
+      ) : askGym ? (
+        <div className="bg-zinc-900/60 border border-emerald-500/25 rounded-2xl p-5 mb-4"
+          style={{ boxShadow: '0 0 0 1px rgba(52,211,153,0.15), 0 0 20px rgba(52,211,153,0.06)' }}>
+          <p className="text-base font-semibold text-zinc-100 mb-1">💪 did you go to the gym?</p>
+          <p className="text-xs text-zinc-500 mb-4">evening check-in — log it if you trained today</p>
+          <div className="flex gap-2">
+            <button onClick={async () => { playSuccess(); await logGym(today); setGymAnswered(true); await refresh(); }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' }}>
+              yes! +10 pts 💪
+            </button>
+            <button onClick={() => { playClick(); setGymAnswered(true); }}
+              className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 text-sm transition-all">
+              not today
+            </button>
+          </div>
+        </div>
       ) : showStart ? (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-5 mb-4">
           <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">new session</h2>
@@ -342,20 +361,18 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
         </div>
       )}
 
-      {/* Tracker status */}
-      {trackerStatus && (
+      {/* Tracker status — only show when there's something meaningful */}
+      {trackerStatus && (trackerStatus.is_idle || trackerStatus.app_name) && (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-4 mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {trackerStatus.is_idle ? (
                 <span className="text-zinc-500 text-sm">💤 idle ({Math.floor(trackerStatus.idle_seconds / 60)}m)</span>
-              ) : trackerStatus.app_name ? (
+              ) : (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-sm text-zinc-200">{trackerStatus.app_name}</span>
                 </>
-              ) : (
-                <span className="text-zinc-600 text-sm">waiting for first tick…</span>
               )}
             </div>
             {trackerStatus.consecutive_productive_secs > 0 && (

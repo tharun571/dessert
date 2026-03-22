@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   taskListForDate, taskCreate, taskMarkDone, taskReopen, taskDelete, taskUpdate,
-  todayDate, tomorrowDate,
+  todayDate, tomorrowDate, currentHour, dayPlanningStatus, logSunlight, logGym, logBook, logWalk, logNoOutsideFood,
 } from '../../lib/api';
-import type { Task } from '../../lib/types';
+import type { Task, DayPlanningStatus } from '../../lib/types';
 import { playClick, playSuccess, playComplete } from '../../lib/sounds';
 
 type Tab = 'today' | 'tomorrow';
@@ -15,13 +15,20 @@ export default function TasksPage() {
   const [newMinutes, setNewMinutes] = useState('');
   const [newMainQuest, setNewMainQuest] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [planning, setPlanning] = useState<DayPlanningStatus | null>(null);
 
-  const date = tab === 'today' ? todayDate() : tomorrowDate();
+  const today = todayDate();
+  const tomorrow = tomorrowDate();
+  const date = tab === 'today' ? today : tomorrow;
 
   const refresh = useCallback(async () => {
-    const t = await taskListForDate(date);
+    const [t, p] = await Promise.all([
+      taskListForDate(date),
+      tab === 'today' ? dayPlanningStatus(today, tomorrow, currentHour()) : Promise.resolve(null),
+    ]);
     setTasks(t);
-  }, [date]);
+    if (tab === 'today') setPlanning(p as DayPlanningStatus);
+  }, [date, tab, today, tomorrow]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -144,6 +151,40 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      {/* Habits — today only, hardcoded */}
+      {tab === 'today' && planning && (() => {
+        const habits = [
+          { label: '☀️ morning sunlight', done: planning.sunlight_done, onLog: () => logSunlight(today), activeColor: 'border-yellow-500 bg-yellow-500/20 text-yellow-400', hoverColor: 'hover:border-yellow-400 hover:bg-yellow-500/10' },
+          { label: '💪 gym',              done: planning.gym_done,      onLog: () => logGym(today),      activeColor: 'border-emerald-500 bg-emerald-500/20 text-emerald-400', hoverColor: 'hover:border-emerald-400 hover:bg-emerald-500/10' },
+          { label: '📚 read a book',      done: planning.book_done,     onLog: () => logBook(today),     activeColor: 'border-blue-500 bg-blue-500/20 text-blue-400',         hoverColor: 'hover:border-blue-400 hover:bg-blue-500/10' },
+          { label: '🚶 go for a walk',    done: planning.walk_done,     onLog: () => logWalk(today),     activeColor: 'border-sky-500 bg-sky-500/20 text-sky-400',           hoverColor: 'hover:border-sky-400 hover:bg-sky-500/10' },
+          { label: '🥗 no outside food',  done: planning.no_outside_food_done, onLog: () => logNoOutsideFood(today), activeColor: 'border-lime-500 bg-lime-500/20 text-lime-400', hoverColor: 'hover:border-lime-400 hover:bg-lime-500/10' },
+        ];
+        return (
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">habits</p>
+            <div className="space-y-2">
+              {habits.map(h => (
+                <div key={h.label} className="flex items-center gap-3 bg-zinc-900/60 border border-white/5 rounded-2xl p-3.5">
+                  <button
+                    onClick={async () => { if (!h.done) { playSuccess(); await h.onLog(); await refresh(); } }}
+                    disabled={h.done}
+                    className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all text-xs ${h.done ? h.activeColor : `border-zinc-600 ${h.hoverColor}`}`}
+                  >
+                    {h.done && '✓'}
+                  </button>
+                  <div className="flex-1">
+                    <p className="text-sm text-zinc-300">{h.label}</p>
+                    {h.done && <p className="text-xs text-zinc-600 mt-0.5">logged today · +10 pts</p>}
+                  </div>
+                  {!h.done && <span className="text-xs text-zinc-600">+10 pts</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Empty state */}
       {planned.length === 0 && done.length === 0 && (

@@ -1,6 +1,6 @@
 # dessert 🍨
 
-> turn intentional work into a game.
+> turn work into a game.
 
 dessert is a macOS productivity app that gamifies your focus. earn points for deep work, lose points for doomscrolling, and spend them on real rewards like naps, ice cream, or a guilt-free YouTube break.
 
@@ -47,8 +47,8 @@ pnpm tauri dev
 | 60 min session combo | +10 |
 | 90 min session combo | +15 |
 | 2 hr session combo | +20 |
-| complete task | +150 |
-| complete main quest | +250 |
+| complete task | +15 |
+| complete main quest | +25 |
 | X/YT doomscroll (in session, per min) | −3 |
 | X/YT doomscroll (ambient, per min) | −1 |
 

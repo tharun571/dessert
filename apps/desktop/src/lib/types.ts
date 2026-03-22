@@ -7,6 +7,12 @@ export interface DayPlanningStatus {
   needs_planning: boolean;
   suggest_tomorrow: boolean;
   ask_sunlight: boolean;
+  sunlight_done: boolean;
+  ask_gym: boolean;
+  gym_done: boolean;
+  book_done: boolean;
+  walk_done: boolean;
+  no_outside_food_done: boolean;
 }
 
 export interface Session {
@@ -87,6 +93,11 @@ export interface DayScore {
 export interface OverallScore {
   total: number;
   days: number;
+  earned: number;
+  lost: number;
+  spent: number;
+  sessions_completed: number;
+  tasks_completed: number;
 }
 
 export interface AppRule {

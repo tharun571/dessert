@@ -199,6 +199,37 @@ pub fn day_planning_status(
         |r| r.get(0),
     ).unwrap_or(0);
 
+    let gym_logged: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='gym' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    // Count sessions started at or after 6pm today
+    let evening_session_count: i32 = db.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE date(started_at)=?1 AND strftime('%H', started_at) >= '18'",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let book_logged: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='book' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let walk_logged: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='walk' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let no_outside_food_logged: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='no_outside_food' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
     Ok(DayPlanningStatus {
         local_date,
         has_tasks: task_count > 0,
@@ -208,6 +239,12 @@ pub fn day_planning_status(
         needs_planning: task_count == 0 && session_count == 0,
         suggest_tomorrow: hour >= 17 && tomorrow_task_count == 0,
         ask_sunlight: hour < 12 && session_count == 0 && sunlight_logged == 0,
+        sunlight_done: sunlight_logged > 0,
+        ask_gym: hour >= 18 && evening_session_count == 0 && gym_logged == 0,
+        gym_done: gym_logged > 0,
+        book_done: book_logged > 0,
+        walk_done: walk_logged > 0,
+        no_outside_food_done: no_outside_food_logged > 0,
     })
 }
 
@@ -262,6 +299,85 @@ pub fn session_end_stats(state: State<AppState>, session_id: String) -> Result<S
         is_longest_week: duration_ms > 0 && duration_ms >= longest_week,
         is_longest_ever: duration_ms > 0 && duration_ms >= longest_ever,
     })
+}
+
+#[tauri::command]
+pub fn log_gym(state: State<AppState>, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let already: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='gym' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    if already > 0 {
+        return Ok(());
+    }
+
+    db.execute(
+        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+         VALUES (?1, ?2, NULL, 10, 'gym', 'hit the gym 💪', NULL)",
+        rusqlite::params![id, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn log_book(state: State<AppState>, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+    let already: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='book' AND date(ts)=?1",
+        rusqlite::params![local_date], |r| r.get(0),
+    ).unwrap_or(0);
+    if already > 0 { return Ok(()); }
+    db.execute(
+        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+         VALUES (?1, ?2, NULL, 10, 'book', 'read a book today 📚', NULL)",
+        rusqlite::params![id, now],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn log_walk(state: State<AppState>, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+    let already: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='walk' AND date(ts)=?1",
+        rusqlite::params![local_date], |r| r.get(0),
+    ).unwrap_or(0);
+    if already > 0 { return Ok(()); }
+    db.execute(
+        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+         VALUES (?1, ?2, NULL, 10, 'walk', 'went for a walk 🚶', NULL)",
+        rusqlite::params![id, now],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn log_no_outside_food(state: State<AppState>, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+    let already: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='no_outside_food' AND date(ts)=?1",
+        rusqlite::params![local_date], |r| r.get(0),
+    ).unwrap_or(0);
+    if already > 0 { return Ok(()); }
+    db.execute(
+        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+         VALUES (?1, ?2, NULL, 10, 'no_outside_food', 'no outside food today 🥗', NULL)",
+        rusqlite::params![id, now],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

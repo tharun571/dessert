@@ -129,10 +129,39 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
 #[tauri::command]
 pub fn task_reopen(state: State<AppState>, task_id: String) -> Result<Task, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let (is_main_quest, current_status): (i32, String) = db.query_row(
+        "SELECT is_main_quest, status FROM tasks WHERE id=?1",
+        rusqlite::params![task_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    ).map_err(|e| e.to_string())?;
+
+    // Only deduct points if actually was done
+    if current_status == "done" {
+        let delta = if is_main_quest != 0 { -25i32 } else { -15i32 };
+        let now = Utc::now().to_rfc3339();
+        let score_id = Uuid::new_v4().to_string();
+        let session_id: Option<String> = current_session_id(&db);
+
+        db.execute(
+            "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+             VALUES (?1, ?2, ?3, ?4, 'task_reopened', 'Task reopened — points reversed.', NULL)",
+            rusqlite::params![score_id, now, session_id, delta],
+        ).map_err(|e| e.to_string())?;
+
+        if let Some(ref sid) = session_id {
+            db.execute(
+                "UPDATE sessions SET score_total = score_total + ?1 WHERE id = ?2",
+                rusqlite::params![delta, sid],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+
     db.execute(
         "UPDATE tasks SET status='planned', completed_at=NULL WHERE id=?1",
         rusqlite::params![task_id],
     ).map_err(|e| e.to_string())?;
+
     get_task(&db, &task_id)
 }
 
