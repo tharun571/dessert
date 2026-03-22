@@ -8,11 +8,16 @@ export interface DayPlanningStatus {
   suggest_tomorrow: boolean;
   ask_sunlight: boolean;
   sunlight_done: boolean;
+  sunlight_at: string | null;
   ask_gym: boolean;
   gym_done: boolean;
+  gym_at: string | null;
   book_done: boolean;
+  book_at: string | null;
   walk_done: boolean;
+  walk_at: string | null;
   no_outside_food_done: boolean;
+  no_outside_food_at: string | null;
 }
 
 export interface Session {

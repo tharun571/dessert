@@ -176,9 +176,12 @@ pub fn task_delete(state: State<AppState>, task_id: String) -> Result<(), String
 #[tauri::command]
 pub fn task_list_for_date(state: State<AppState>, date: String) -> Result<Vec<Task>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    // Include tasks planned for this date AND any overdue planned tasks from prior days (carryover)
     let mut stmt = db.prepare(
         "SELECT id, title, planned_for, estimated_minutes, is_main_quest, status, completed_at, completion_source, llm_verdict_json, notes, created_at
-         FROM tasks WHERE planned_for=?1 ORDER BY is_main_quest DESC, created_at ASC"
+         FROM tasks
+         WHERE planned_for=?1 OR (planned_for < ?1 AND status='planned')
+         ORDER BY is_main_quest DESC, planned_for ASC, created_at ASC"
     ).map_err(|e| e.to_string())?;
     let result = stmt.query_map(rusqlite::params![date], row_to_task)
         .map_err(|e| e.to_string())?

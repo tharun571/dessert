@@ -19,6 +19,8 @@ pub struct TrackerState {
     pub is_idle: bool,
     pub consecutive_productive_secs: i32,
     pub last_tick: Option<String>,
+    /// Tracks which session the combo counter belongs to; resets counter on session change
+    pub last_session_id: Option<String>,
 }
 
 impl Default for TrackerState {
@@ -30,6 +32,7 @@ impl Default for TrackerState {
             is_idle: false,
             consecutive_productive_secs: 0,
             last_tick: None,
+            last_session_id: None,
         }
     }
 }
@@ -148,6 +151,16 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).ok();
 
+    // Reset combo counter when session changes (prevents carry-over between sessions)
+    {
+        let current_sid = session.as_ref().map(|(id, _, _)| id.clone());
+        let mut t = tracker.lock().unwrap();
+        if t.last_session_id != current_sid {
+            t.consecutive_productive_secs = 0;
+            t.last_session_id = current_sid;
+        }
+    }
+
     // Award time-based combo bonuses (once per session per milestone)
     if let Some((ref session_id, _, ref started_at)) = session {
         let start_time = chrono::DateTime::parse_from_rfc3339(started_at)
@@ -158,7 +171,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
             rusqlite::params![session_id],
             |r| r.get(0),
         ).unwrap_or(0);
-        let elapsed_mins = ((now - start_time).num_milliseconds() - paused_ms) / 60_000;
+        let elapsed_mins = (((now - start_time).num_milliseconds() - paused_ms) / 60_000).max(0);
 
         let milestones: &[(i64, i32, &str, &str)] = &[
             (60,  10, "session_combo_60",  "60 min deep work combo! 🔥 +10"),

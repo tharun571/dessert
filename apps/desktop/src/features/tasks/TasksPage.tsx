@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   taskListForDate, taskCreate, taskMarkDone, taskReopen, taskDelete, taskUpdate,
-  todayDate, tomorrowDate, currentHour, dayPlanningStatus, logSunlight, logGym, logBook, logWalk, logNoOutsideFood,
+  todayDate, tomorrowDate, currentHour, dayPlanningStatus,
+  logSunlight, logGym, logBook, logWalk, logNoOutsideFood, unlogHabit,
 } from '../../lib/api';
 import type { Task, DayPlanningStatus } from '../../lib/types';
 import { playClick, playSuccess, playComplete } from '../../lib/sounds';
@@ -154,12 +155,13 @@ export default function TasksPage() {
 
       {/* Habits — today only, hardcoded */}
       {tab === 'today' && planning && (() => {
+        const fmtTime = (ts: string | null) => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
         const habits = [
-          { label: '☀️ morning sunlight', done: planning.sunlight_done, onLog: () => logSunlight(today), activeColor: 'border-yellow-500 bg-yellow-500/20 text-yellow-400', hoverColor: 'hover:border-yellow-400 hover:bg-yellow-500/10' },
-          { label: '💪 gym',              done: planning.gym_done,      onLog: () => logGym(today),      activeColor: 'border-emerald-500 bg-emerald-500/20 text-emerald-400', hoverColor: 'hover:border-emerald-400 hover:bg-emerald-500/10' },
-          { label: '📚 read a book',      done: planning.book_done,     onLog: () => logBook(today),     activeColor: 'border-blue-500 bg-blue-500/20 text-blue-400',         hoverColor: 'hover:border-blue-400 hover:bg-blue-500/10' },
-          { label: '🚶 go for a walk',    done: planning.walk_done,     onLog: () => logWalk(today),     activeColor: 'border-sky-500 bg-sky-500/20 text-sky-400',           hoverColor: 'hover:border-sky-400 hover:bg-sky-500/10' },
-          { label: '🥗 no outside food',  done: planning.no_outside_food_done, onLog: () => logNoOutsideFood(today), activeColor: 'border-lime-500 bg-lime-500/20 text-lime-400', hoverColor: 'hover:border-lime-400 hover:bg-lime-500/10' },
+          { label: '☀️ morning sunlight', done: planning.sunlight_done, at: fmtTime(planning.sunlight_at), code: 'sunlight',       onLog: () => logSunlight(today),      activeColor: 'border-yellow-500 bg-yellow-500/20 text-yellow-400', hoverColor: 'hover:border-yellow-400 hover:bg-yellow-500/10' },
+          { label: '💪 gym',              done: planning.gym_done,      at: fmtTime(planning.gym_at),      code: 'gym',            onLog: () => logGym(today),           activeColor: 'border-emerald-500 bg-emerald-500/20 text-emerald-400', hoverColor: 'hover:border-emerald-400 hover:bg-emerald-500/10' },
+          { label: '📚 read a book',      done: planning.book_done,     at: fmtTime(planning.book_at),     code: 'book',           onLog: () => logBook(today),          activeColor: 'border-blue-500 bg-blue-500/20 text-blue-400',         hoverColor: 'hover:border-blue-400 hover:bg-blue-500/10' },
+          { label: '🚶 go for a walk',    done: planning.walk_done,     at: fmtTime(planning.walk_at),     code: 'walk',           onLog: () => logWalk(today),          activeColor: 'border-sky-500 bg-sky-500/20 text-sky-400',           hoverColor: 'hover:border-sky-400 hover:bg-sky-500/10' },
+          { label: '🥗 no outside food',  done: planning.no_outside_food_done, at: fmtTime(planning.no_outside_food_at), code: 'no_outside_food', onLog: () => logNoOutsideFood(today), activeColor: 'border-lime-500 bg-lime-500/20 text-lime-400', hoverColor: 'hover:border-lime-400 hover:bg-lime-500/10' },
         ];
         return (
           <div className="mb-6">
@@ -168,15 +170,23 @@ export default function TasksPage() {
               {habits.map(h => (
                 <div key={h.label} className="flex items-center gap-3 bg-zinc-900/60 border border-white/5 rounded-2xl p-3.5">
                   <button
-                    onClick={async () => { if (!h.done) { playSuccess(); await h.onLog(); await refresh(); } }}
-                    disabled={h.done}
+                    onClick={async () => {
+                      if (h.done) {
+                        playClick();
+                        await unlogHabit(h.code, today);
+                      } else {
+                        playSuccess();
+                        await h.onLog();
+                      }
+                      await refresh();
+                    }}
                     className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all text-xs ${h.done ? h.activeColor : `border-zinc-600 ${h.hoverColor}`}`}
                   >
                     {h.done && '✓'}
                   </button>
                   <div className="flex-1">
                     <p className="text-sm text-zinc-300">{h.label}</p>
-                    {h.done && <p className="text-xs text-zinc-600 mt-0.5">logged today · +10 pts</p>}
+                    {h.done && h.at && <p className="text-xs text-zinc-600 mt-0.5">logged at {h.at} · +10 pts</p>}
                   </div>
                   {!h.done && <span className="text-xs text-zinc-600">+10 pts</span>}
                 </div>
@@ -208,9 +218,14 @@ export default function TasksPage() {
                 className="w-5 h-5 rounded border border-zinc-600 hover:border-emerald-400 hover:bg-emerald-500/10 flex items-center justify-center shrink-0 transition-all"
               />
               <div className="flex-1 min-w-0">
-                <p className={`text-sm truncate ${task.is_main_quest ? 'text-amber-300 font-medium' : 'text-zinc-200'}`}>
-                  {task.is_main_quest && '⭐ '}{task.title}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`text-sm truncate ${task.is_main_quest ? 'text-amber-300 font-medium' : 'text-zinc-200'}`}>
+                    {task.is_main_quest && '⭐ '}{task.title}
+                  </p>
+                  {task.planned_for !== date && (
+                    <span className="text-xs bg-orange-500/10 border border-orange-500/25 text-orange-400 px-1.5 py-0.5 rounded-md shrink-0">↩ carried over</span>
+                  )}
+                </div>
                 {task.estimated_minutes && (
                   <p className="text-xs text-zinc-500 mt-0.5">~{task.estimated_minutes} min</p>
                 )}

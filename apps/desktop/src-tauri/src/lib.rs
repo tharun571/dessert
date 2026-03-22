@@ -58,6 +58,7 @@ pub fn run() {
             commands::sessions::log_book,
             commands::sessions::log_walk,
             commands::sessions::log_no_outside_food,
+            commands::sessions::unlog_habit,
             commands::tasks::task_create,
             commands::tasks::task_update,
             commands::tasks::task_mark_done,

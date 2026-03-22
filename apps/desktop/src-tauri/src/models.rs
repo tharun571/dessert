@@ -13,13 +13,18 @@ pub struct DayPlanningStatus {
     pub ask_sunlight: bool,
     /// true if sunlight was already logged today
     pub sunlight_done: bool,
+    pub sunlight_at: Option<String>,
     /// true if it's evening (hour >= 18), first evening session, and gym not yet logged
     pub ask_gym: bool,
     /// true if gym was already logged today
     pub gym_done: bool,
+    pub gym_at: Option<String>,
     pub book_done: bool,
+    pub book_at: Option<String>,
     pub walk_done: bool,
+    pub walk_at: Option<String>,
     pub no_outside_food_done: bool,
+    pub no_outside_food_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

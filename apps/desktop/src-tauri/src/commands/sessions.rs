@@ -212,23 +212,24 @@ pub fn day_planning_status(
         |r| r.get(0),
     ).unwrap_or(0);
 
-    let book_logged: i32 = db.query_row(
-        "SELECT COUNT(*) FROM score_events WHERE reason_code='book' AND date(ts)=?1",
-        rusqlite::params![local_date],
-        |r| r.get(0),
-    ).unwrap_or(0);
+    // Helper closure: get timestamp of a logged habit for today, if any
+    let habit_ts = |code: &str| -> Option<String> {
+        db.query_row(
+            "SELECT ts FROM score_events WHERE reason_code=?1 AND date(ts)=?2 AND delta > 0 ORDER BY ts DESC LIMIT 1",
+            rusqlite::params![code, local_date],
+            |r| r.get(0),
+        ).ok()
+    };
 
-    let walk_logged: i32 = db.query_row(
-        "SELECT COUNT(*) FROM score_events WHERE reason_code='walk' AND date(ts)=?1",
-        rusqlite::params![local_date],
-        |r| r.get(0),
-    ).unwrap_or(0);
+    let sunlight_at = habit_ts("sunlight");
+    let gym_at      = habit_ts("gym");
+    let book_at     = habit_ts("book");
+    let walk_at     = habit_ts("walk");
+    let no_outside_food_at = habit_ts("no_outside_food");
 
-    let no_outside_food_logged: i32 = db.query_row(
-        "SELECT COUNT(*) FROM score_events WHERE reason_code='no_outside_food' AND date(ts)=?1",
-        rusqlite::params![local_date],
-        |r| r.get(0),
-    ).unwrap_or(0);
+    let book_logged             = book_at.is_some() as i32;
+    let walk_logged             = walk_at.is_some() as i32;
+    let no_outside_food_logged  = no_outside_food_at.is_some() as i32;
 
     Ok(DayPlanningStatus {
         local_date,
@@ -240,11 +241,16 @@ pub fn day_planning_status(
         suggest_tomorrow: hour >= 17 && tomorrow_task_count == 0,
         ask_sunlight: hour < 12 && session_count == 0 && sunlight_logged == 0,
         sunlight_done: sunlight_logged > 0,
+        sunlight_at,
         ask_gym: hour >= 18 && evening_session_count == 0 && gym_logged == 0,
         gym_done: gym_logged > 0,
+        gym_at,
         book_done: book_logged > 0,
+        book_at,
         walk_done: walk_logged > 0,
+        walk_at,
         no_outside_food_done: no_outside_food_logged > 0,
+        no_outside_food_at,
     })
 }
 
@@ -323,6 +329,17 @@ pub fn log_gym(state: State<AppState>, local_date: String) -> Result<(), String>
         rusqlite::params![id, now],
     ).map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unlog_habit(state: State<AppState>, reason_code: String, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    // Delete the positive score event logged today for this habit
+    db.execute(
+        "DELETE FROM score_events WHERE reason_code=?1 AND date(ts)=?2 AND delta > 0",
+        rusqlite::params![reason_code, local_date],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 

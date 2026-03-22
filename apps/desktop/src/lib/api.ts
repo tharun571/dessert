@@ -26,6 +26,9 @@ export const logWalk = (localDate: string) =>
 export const logNoOutsideFood = (localDate: string) =>
   invoke<void>('log_no_outside_food', { localDate });
 
+export const unlogHabit = (reasonCode: string, localDate: string) =>
+  invoke<void>('unlog_habit', { reasonCode, localDate });
+
 export const sessionPause = (sessionId: string) =>
   invoke<Session>('session_pause', { sessionId });
 
