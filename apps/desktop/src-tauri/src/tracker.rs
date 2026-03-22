@@ -36,25 +36,47 @@ impl Default for TrackerState {
 }
 
 /// Get the frontmost application's bundle_id and display name.
-/// Uses lsappinfo which requires no special permissions.
+/// Uses lsappinfo (no special permissions required).
+/// macOS: `lsappinfo front` returns the ASN only; `lsappinfo info <ASN>` gives full details.
 pub fn get_frontmost_app() -> Option<(String, String)> {
-    let output = std::process::Command::new("lsappinfo")
+    // Step 1: get the ASN of the frontmost app
+    let front = std::process::Command::new("/usr/bin/lsappinfo")
         .arg("front")
         .output()
         .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
+    let asn = String::from_utf8_lossy(&front.stdout).trim().to_string();
+    if asn.is_empty() {
+        return None;
+    }
 
-    // First quoted token is the app name: "Finder" ASN:...
+    // Step 2: get full info for that ASN
+    let info = std::process::Command::new("/usr/bin/lsappinfo")
+        .arg("info")
+        .arg(&asn)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&info.stdout).to_string();
+    let text = text.trim();
+
+    if text.is_empty() {
+        return None;
+    }
+
+    // Parse app name — first quoted token: "AppName" ASN:...
     let name = text.split('"').nth(1)?.to_string();
     if name.is_empty() {
         return None;
     }
 
-    // Extract bundleID="..."
-    let marker = "bundleID=\"";
-    let start = text.find(marker)? + marker.len();
-    let end = start + text[start..].find('"')?;
-    let bundle_id = text[start..end].to_string();
+    // Parse bundleID="..." (unquoted key in lsappinfo info output)
+    let bundle_id = if let Some(pos) = text.find("bundleID=\"") {
+        let start = pos + "bundleID=\"".len();
+        let end = start + text[start..].find('"')?;
+        text[start..end].to_string()
+    } else {
+        // No bundleID field (e.g. system daemons) — use name as fallback
+        name.clone()
+    };
 
     if bundle_id.is_empty() {
         return None;
