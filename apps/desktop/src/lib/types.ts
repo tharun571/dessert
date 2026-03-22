@@ -93,6 +93,8 @@ export interface DayScore {
   earned: number;
   lost: number;
   spent: number;
+  sessions_today: number;
+  time_spent_ms: number;
 }
 
 export interface OverallScore {

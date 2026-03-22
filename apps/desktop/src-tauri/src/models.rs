@@ -125,6 +125,8 @@ pub struct DayScore {
     pub earned: i32,
     pub lost: i32,
     pub spent: i32,
+    pub sessions_today: i32,
+    pub time_spent_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

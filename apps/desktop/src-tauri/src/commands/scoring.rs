@@ -43,7 +43,21 @@ pub fn score_get_today(state: State<AppState>) -> Result<DayScore, String> {
         |r| r.get(0),
     ).map_err(|e| e.to_string())?;
 
-    Ok(DayScore { total, earned, lost, spent })
+    let sessions_today: i32 = db.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE date(started_at) = ?1 AND state = 'ended'",
+        rusqlite::params![today],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    // Sum of (ended_at - started_at - paused_ms) for all ended sessions today
+    let time_spent_ms: i64 = db.query_row(
+        "SELECT COALESCE(SUM(CAST((julianday(ended_at) - julianday(started_at)) * 86400000 AS INTEGER) - paused_ms), 0)
+         FROM sessions WHERE date(started_at) = ?1 AND state = 'ended' AND ended_at IS NOT NULL",
+        rusqlite::params![today],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(DayScore { total, earned, lost, spent, sessions_today, time_spent_ms })
 }
 
 #[tauri::command]

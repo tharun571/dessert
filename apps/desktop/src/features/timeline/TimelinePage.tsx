@@ -29,6 +29,14 @@ function formatTime(ts: string): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDuration(ms: number): string {
+  const totalMins = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 type Tab = 'today' | 'overall';
 
 export default function TimelinePage() {
@@ -78,19 +86,31 @@ export default function TimelinePage() {
       {tab === 'today' ? (
         <>
           {score && (
-            <div className="grid grid-cols-4 gap-2 mb-6">
-              {[
-                { label: 'total',  value: (score.total >= 0 ? '+' : '') + score.total,  color: score.total >= 0 ? 'text-gradient-score-pos' : 'text-gradient-score-neg' },
-                { label: 'earned', value: `+${score.earned}`, color: 'text-emerald-400' },
-                { label: 'lost',   value: `−${score.lost}`,   color: 'text-red-400' },
-                { label: 'spent',  value: `−${score.spent}`,  color: 'text-violet-400' },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="bg-zinc-900/60 border border-white/5 rounded-2xl p-3 text-center">
-                  <p className={`text-lg font-bold tabular-nums ${color}`}>{value}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{label}</p>
+            <>
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {[
+                  { label: 'total',  value: (score.total >= 0 ? '+' : '') + score.total,  color: score.total >= 0 ? 'text-gradient-score-pos' : 'text-gradient-score-neg' },
+                  { label: 'earned', value: `+${score.earned}`, color: 'text-emerald-400' },
+                  { label: 'lost',   value: `−${score.lost}`,   color: 'text-red-400' },
+                  { label: 'spent',  value: `−${score.spent}`,  color: 'text-violet-400' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-zinc-900/60 border border-white/5 rounded-2xl p-3 text-center">
+                    <p className={`text-lg font-bold tabular-nums ${color}`}>{value}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-6">
+                <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-3 text-center">
+                  <p className="text-lg font-bold tabular-nums text-zinc-200">{score.sessions_today}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">sessions today</p>
                 </div>
-              ))}
-            </div>
+                <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-3 text-center">
+                  <p className="text-lg font-bold tabular-nums text-zinc-200">{formatDuration(score.time_spent_ms)}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">time focused</p>
+                </div>
+              </div>
+            </>
           )}
 
           {events.length === 0 ? (
