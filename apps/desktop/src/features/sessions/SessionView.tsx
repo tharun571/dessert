@@ -354,27 +354,17 @@ export default function SessionView() {
       )}
 
       {/* Tracker status */}
-      {trackerStatus && (
+      {trackerStatus && (trackerStatus.is_idle || trackerStatus.app_name) && (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-4 mb-4">
           <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">now tracking</p>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {trackerStatus.is_idle ? (
-                <span className="text-zinc-500 text-sm">💤 idle ({Math.floor(trackerStatus.idle_seconds / 60)}m)</span>
-              ) : trackerStatus.app_name ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-sm text-zinc-200">{trackerStatus.app_name}</span>
-                </>
-              ) : (
-                <span className="text-zinc-600 text-sm">waiting for first tick…</span>
-              )}
-            </div>
-            {trackerStatus.consecutive_productive_secs > 0 && (
-              <div className="flex items-center gap-1 text-xs text-orange-400">
-                <span>🔥</span>
-                <span>{Math.floor(trackerStatus.consecutive_productive_secs / 60)}m streak</span>
-              </div>
+          <div className="flex items-center gap-2">
+            {trackerStatus.is_idle ? (
+              <span className="text-zinc-500 text-sm">💤 idle ({Math.floor(trackerStatus.idle_seconds / 60)}m)</span>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-sm text-zinc-200">{trackerStatus.app_name}</span>
+              </>
             )}
           </div>
         </div>

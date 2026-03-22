@@ -94,7 +94,10 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
 
     let (bundle_id, app_name) = match get_frontmost_app() {
         Some(v) => v,
-        None => return,
+        None => {
+            eprintln!("[tracker] tick: lsappinfo returned no app — skipping");
+            return;
+        }
     };
     let idle_secs = get_idle_seconds();
     let is_idle = idle_secs >= AFK_THRESHOLD_SECS;
@@ -109,7 +112,10 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         t.last_tick = Some(now_str.clone());
     }
 
+    eprintln!("[tracker] tick: app=\"{}\" idle={:.0}s", app_name, idle_secs);
+
     if is_idle {
+        eprintln!("[tracker] idle — skipping scoring");
         return;
     }
 
@@ -121,11 +127,13 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         r#"{{"bundle_id":"{}", "app_name":"{}", "idle_secs":{:.0}}}"#,
         bundle_id, app_name, idle_secs
     );
-    let _ = conn.execute(
+    let raw_insert_ok = conn.execute(
         "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)
          VALUES (?1, ?2, 'mac_app', 'frontmost_app', ?3, NULL)",
         rusqlite::params![raw_id, now_str, payload],
-    );
+    ).is_ok();
+    // Use raw_id as FK only if the insert succeeded; otherwise pass NULL to avoid FK violation
+    let related_id: Option<&str> = if raw_insert_ok { Some(&raw_id) } else { None };
 
     // Look up app rule
     let rule: Option<(String, i32)> = conn.query_row(
@@ -145,6 +153,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).ok();
+    eprintln!("[tracker] active session: {:?}", session.as_ref().map(|(id, score, _)| (id.as_str(), score)));
 
     // Track last session id (used for future per-session state if needed)
     {
@@ -182,7 +191,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
                     |r| r.get(0),
                 ).unwrap_or(1);
                 if already == 0 {
-                    emit_score(&conn, &now_str, Some(session_id), delta, reason, explanation, &raw_id);
+                    emit_score(&conn, &now_str, Some(session_id), delta, reason, explanation, related_id);
                     update_session_score(&conn, session_id, delta);
                 }
             }
@@ -200,8 +209,8 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         if category != "negative" {
             emit_score(&conn, &now_str, Some(session_id), 1,
                 "session_minute",
-                &format!("session minute +1"),
-                &raw_id);
+                "session minute +1",
+                related_id);
             update_session_score(&conn, session_id, 1);
         }
     }
@@ -213,7 +222,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
             emit_score(&conn, &now_str, Some(session_id), delta,
                 "productive_minute",
                 &format!("Productive minute in {} (+{})", app_name, delta),
-                &raw_id);
+                related_id);
             update_session_score(&conn, session_id, delta);
 
         }
@@ -222,7 +231,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
             emit_score(&conn, &now_str, Some(session_id), -3,
                 "red_site_penalty",
                 &format!("{} during session (-3)", app_name),
-                &raw_id);
+                related_id);
             update_session_score(&conn, session_id, -3);
         }
         ("negative", None) => {
@@ -230,7 +239,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
             emit_score(&conn, &now_str, None, -1,
                 "ambient_red_site_penalty",
                 &format!("{} outside session (-1)", app_name),
-                &raw_id);
+                related_id);
         }
         _ => {}
     }
@@ -243,19 +252,25 @@ fn emit_score(
     delta: i32,
     reason_code: &str,
     explanation: &str,
-    related_event_id: &str,
+    related_event_id: Option<&str>,
 ) {
     let id = Uuid::new_v4().to_string();
-    let _ = conn.execute(
+    if let Err(e) = conn.execute(
         "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![id, ts, session_id, delta, reason_code, explanation, related_event_id],
-    );
+    ) {
+        eprintln!("[tracker] ERROR emitting score event ({}): {}", reason_code, e);
+    }
 }
 
 fn update_session_score(conn: &Connection, session_id: &str, delta: i32) {
-    let _ = conn.execute(
+    if let Err(e) = conn.execute(
         "UPDATE sessions SET score_total = score_total + ?1 WHERE id = ?2",
         rusqlite::params![delta, session_id],
-    );
+    ) {
+        eprintln!("[tracker] ERROR updating session score: {}", e);
+    } else {
+        eprintln!("[tracker] session_score += {} for session {}", delta, session_id);
+    }
 }
