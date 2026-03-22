@@ -375,12 +375,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
                 </>
               )}
             </div>
-            {trackerStatus.consecutive_productive_secs > 0 && (
-              <div className="flex items-center gap-1 text-xs text-orange-400">
-                <span>🔥</span>
-                <span>{Math.floor(trackerStatus.consecutive_productive_secs / 60)}m streak</span>
-              </div>
-            )}
+
           </div>
         </div>
       )}

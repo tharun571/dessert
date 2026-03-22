@@ -158,6 +158,5 @@ export interface TrackerStatus {
   app_name: string | null;
   idle_seconds: number;
   is_idle: boolean;
-  consecutive_productive_secs: number;
   last_tick: string | null;
 }

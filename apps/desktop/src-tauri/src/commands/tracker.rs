@@ -8,7 +8,6 @@ pub struct TrackerStatus {
     pub app_name: Option<String>,
     pub idle_seconds: f64,
     pub is_idle: bool,
-    pub consecutive_productive_secs: i32,
     pub last_tick: Option<String>,
 }
 
@@ -20,7 +19,6 @@ pub fn tracker_get_status(state: State<AppState>) -> Result<TrackerStatus, Strin
         app_name: t.app_name.clone(),
         idle_seconds: t.idle_seconds,
         is_idle: t.is_idle,
-        consecutive_productive_secs: t.consecutive_productive_secs,
         last_tick: t.last_tick.clone(),
     })
 }

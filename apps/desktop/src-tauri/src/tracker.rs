@@ -17,9 +17,8 @@ pub struct TrackerState {
     pub app_name: Option<String>,
     pub idle_seconds: f64,
     pub is_idle: bool,
-    pub consecutive_productive_secs: i32,
     pub last_tick: Option<String>,
-    /// Tracks which session the combo counter belongs to; resets counter on session change
+    /// Tracks which session the combo counter belongs to; used for milestone idempotency
     pub last_session_id: Option<String>,
 }
 
@@ -30,7 +29,6 @@ impl Default for TrackerState {
             app_name: None,
             idle_seconds: 0.0,
             is_idle: false,
-            consecutive_productive_secs: 0,
             last_tick: None,
             last_session_id: None,
         }
@@ -77,7 +75,7 @@ pub fn get_idle_seconds() -> f64 {
 
 const TICK_SECS: u64 = 60;
 const AFK_THRESHOLD_SECS: f64 = 600.0; // 10 minutes
-const COMBO_THRESHOLD_SECS: i32 = 25 * 60; // 25 productive minutes
+
 
 pub fn start(db: Arc<Mutex<Connection>>, tracker: Arc<Mutex<TrackerState>>) {
     std::thread::spawn(move || {
@@ -112,9 +110,6 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     }
 
     if is_idle {
-        // AFK: pause productive streak, no penalties, no rewards
-        let mut t = tracker.lock().unwrap();
-        t.consecutive_productive_secs = 0;
         return;
     }
 
@@ -151,12 +146,11 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).ok();
 
-    // Reset combo counter when session changes (prevents carry-over between sessions)
+    // Track last session id (used for future per-session state if needed)
     {
         let current_sid = session.as_ref().map(|(id, _, _)| id.clone());
         let mut t = tracker.lock().unwrap();
         if t.last_session_id != current_sid {
-            t.consecutive_productive_secs = 0;
             t.last_session_id = current_sid;
         }
     }
@@ -222,18 +216,6 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
                 &raw_id);
             update_session_score(&conn, session_id, delta);
 
-            // Update consecutive counter and check combo
-            let mut t = tracker.lock().unwrap();
-            t.consecutive_productive_secs += TICK_SECS as i32;
-            if t.consecutive_productive_secs >= COMBO_THRESHOLD_SECS {
-                t.consecutive_productive_secs = 0;
-                drop(t); // release lock before DB ops
-                emit_score(&conn, &now_str, Some(session_id), 5,
-                    "combo_bonus",
-                    "25 clean productive minutes — combo bonus! (+5)",
-                    &raw_id);
-                update_session_score(&conn, session_id, 5);
-            }
         }
         ("negative", Some((session_id, _, _))) => {
             // In-session penalty for negative apps (sites handled by browser extension)
@@ -242,8 +224,6 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
                 &format!("{} during session (-3)", app_name),
                 &raw_id);
             update_session_score(&conn, session_id, -3);
-            let mut t = tracker.lock().unwrap();
-            t.consecutive_productive_secs = 0;
         }
         ("negative", None) => {
             // Ambient penalty (outside session)
@@ -251,16 +231,8 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
                 "ambient_red_site_penalty",
                 &format!("{} outside session (-1)", app_name),
                 &raw_id);
-            let mut t = tracker.lock().unwrap();
-            t.consecutive_productive_secs = 0;
         }
-        _ => {
-            // Neutral or positive outside session — reset combo if not productive
-            if category != "positive" {
-                let mut t = tracker.lock().unwrap();
-                t.consecutive_productive_secs = 0;
-            }
-        }
+        _ => {}
     }
 }
 
