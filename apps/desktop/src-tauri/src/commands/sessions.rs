@@ -67,18 +67,20 @@ pub fn session_start(
         rusqlite::params![id, now, planned_minutes, title, now],
     ).map_err(|e| e.to_string())?;
 
-    // Award +5 for session start
-    let score_id = Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
-         VALUES (?1, ?2, ?3, 5, 'session_started', 'Session started — ready to work!', NULL)",
-        rusqlite::params![score_id, now, id],
-    ).map_err(|e| e.to_string())?;
+    // Award +5 for session start — only for the first 6 sessions of the day
+    if session_count < 6 {
+        let score_id = Uuid::new_v4().to_string();
+        db.execute(
+            "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+             VALUES (?1, ?2, ?3, 5, 'session_started', 'Session started — ready to work!', NULL)",
+            rusqlite::params![score_id, now, id],
+        ).map_err(|e| e.to_string())?;
 
-    db.execute(
-        "UPDATE sessions SET score_total = score_total + 5 WHERE id = ?1",
-        rusqlite::params![id],
-    ).map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE sessions SET score_total = score_total + 5 WHERE id = ?1",
+            rusqlite::params![id],
+        ).map_err(|e| e.to_string())?;
+    }
 
     get_session(&db, &id)
 }

@@ -220,34 +220,12 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         }
     }
 
-    let (category, ppm) = match &rule {
+    let (category, _ppm) = match &rule {
         Some((cat, ppm)) => (cat.as_str(), *ppm),
         None => ("neutral", 0),
     };
 
-    // Base session minute: +1 for every non-idle tick while a session is active,
-    // regardless of which app is in focus (as long as it's not a negative/penalty app).
-    if let Some((ref session_id, _, _)) = session {
-        if category != "negative" {
-            emit_score(&conn, &now_str, Some(session_id), 1,
-                "session_minute",
-                "session minute +1",
-                related_id);
-            update_session_score(&conn, session_id, 1);
-        }
-    }
-
     match (category, &session) {
-        ("positive", Some((session_id, _, _))) if ppm > 0 => {
-            // Award bonus productive minute points on top of the base session_minute
-            let delta = ppm;
-            emit_score(&conn, &now_str, Some(session_id), delta,
-                "productive_minute",
-                &format!("Productive minute in {} (+{})", app_name, delta),
-                related_id);
-            update_session_score(&conn, session_id, delta);
-
-        }
         ("negative", Some((session_id, _, _))) => {
             // In-session penalty for negative apps (sites handled by browser extension)
             emit_score(&conn, &now_str, Some(session_id), -3,
