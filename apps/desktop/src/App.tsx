@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import HomePage from './features/home/HomePage';
-import SessionView from './features/sessions/SessionView';
 import TasksPage from './features/tasks/TasksPage';
 import RewardsPage from './features/rewards/RewardsPage';
+import InventoryPage from './features/inventory/InventoryPage';
 import TimelinePage from './features/timeline/TimelinePage';
 import SettingsPage from './features/settings/SettingsPage';
 import { playClick } from './lib/sounds';
 
-type Page = 'home' | 'session' | 'tasks' | 'rewards' | 'timeline' | 'settings';
+type Page = 'home' | 'tasks' | 'rewards' | 'inventory' | 'timeline' | 'settings';
 
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'home', label: 'home', icon: '🏠' },
-  { id: 'session', label: 'session', icon: '⚡' },
   { id: 'tasks', label: 'quests', icon: '📋' },
   { id: 'rewards', label: 'shop', icon: '🍨' },
+  { id: 'inventory', label: 'inventory', icon: '🎒' },
   { id: 'timeline', label: 'timeline', icon: '📊' },
   { id: 'settings', label: 'settings', icon: '⚙️' },
 ];
@@ -33,27 +33,34 @@ function App() {
         style={{ background: 'linear-gradient(180deg, #111 0%, #0d0a07 100%)' }}>
         <div className="text-2xl mb-4 select-none animate-bounce" style={{ animationDuration: '3s' }}>🍨</div>
         {NAV_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => navigate(item.id)}
-            title={item.label}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all duration-200 ${
-              page === item.id
-                ? 'bg-orange-500/25 nav-active-glow ring-1 ring-orange-500/60 scale-105'
-                : 'hover:bg-white/5 text-zinc-500 hover:text-zinc-200 hover:scale-105'
-            }`}
-          >
-            {item.icon}
-          </button>
+          <div key={item.id} className="relative group">
+            <button
+              onClick={() => navigate(item.id)}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all duration-200 ${
+                page === item.id
+                  ? 'bg-orange-500/25 nav-active-glow ring-1 ring-orange-500/60 scale-105'
+                  : 'hover:bg-white/5 text-zinc-500 hover:text-zinc-200 hover:scale-105'
+              }`}
+            >
+              {item.icon}
+            </button>
+            {/* Tooltip */}
+            <div className="absolute left-12 top-1/2 -translate-y-1/2 pointer-events-none z-50
+              opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <div className="bg-zinc-800 border border-white/10 text-zinc-200 text-xs px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-xl">
+                {item.label}
+              </div>
+            </div>
+          </div>
         ))}
       </nav>
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
         {page === 'home' && <HomePage onNavigate={navigate} />}
-        {page === 'session' && <SessionView />}
         {page === 'tasks' && <TasksPage />}
         {page === 'rewards' && <RewardsPage />}
+        {page === 'inventory' && <InventoryPage />}
         {page === 'timeline' && <TimelinePage />}
         {page === 'settings' && <SettingsPage />}
       </main>

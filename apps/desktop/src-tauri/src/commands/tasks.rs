@@ -85,11 +85,16 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
-    let is_main_quest: i32 = db.query_row(
-        "SELECT is_main_quest FROM tasks WHERE id=?1",
+    let (is_main_quest, current_status): (i32, String) = db.query_row(
+        "SELECT is_main_quest, status FROM tasks WHERE id=?1",
         rusqlite::params![task_id],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     ).map_err(|e| e.to_string())?;
+
+    // Idempotent: if already done, don't award points again
+    if current_status == "done" {
+        return get_task(&db, &task_id);
+    }
 
     db.execute(
         "UPDATE tasks SET status='done', completed_at=?1, completion_source='manual' WHERE id=?2",

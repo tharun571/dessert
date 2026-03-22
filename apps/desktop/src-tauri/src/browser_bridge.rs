@@ -38,7 +38,7 @@ pub struct BrowserActivitySample {
 
 #[derive(Debug, Deserialize)]
 struct BrowserEvent {
-    pub event_id: String,
+    pub _event_id: String,
     pub ts: String,
     pub event_type: String,
     pub payload: BrowserActivitySample,
@@ -46,7 +46,7 @@ struct BrowserEvent {
 
 #[derive(Debug, Deserialize)]
 struct EventBatch {
-    pub version: u32,
+    pub _version: u32,
     pub events: Vec<BrowserEvent>,
 }
 
@@ -84,6 +84,7 @@ impl SiteVisit {
 pub struct BridgeState {
     visits: HashMap<String, SiteVisit>,
     /// domain → was_penalized_last_tick (for recovery bonus)
+    #[allow(dead_code)]
     was_penalized: HashMap<String, bool>,
 }
 

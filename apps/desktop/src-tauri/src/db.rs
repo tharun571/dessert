@@ -9,6 +9,10 @@ pub fn open(path: PathBuf) -> Result<Connection> {
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
+    // Add paused_ms / paused_at to sessions if not already present (idempotent)
+    let _ = conn.execute_batch("ALTER TABLE sessions ADD COLUMN paused_ms INTEGER NOT NULL DEFAULT 0;");
+    let _ = conn.execute_batch("ALTER TABLE sessions ADD COLUMN paused_at TEXT;");
+
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,

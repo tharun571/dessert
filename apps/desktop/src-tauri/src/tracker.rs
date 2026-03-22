@@ -142,11 +142,44 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     ).ok();
 
     // Get active session
-    let session: Option<(String, i32)> = conn.query_row(
-        "SELECT id, score_total FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
+    let session: Option<(String, i32, String)> = conn.query_row(
+        "SELECT id, score_total, started_at FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
         [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).ok();
+
+    // Award time-based combo bonuses (once per session per milestone)
+    if let Some((ref session_id, _, ref started_at)) = session {
+        let start_time = chrono::DateTime::parse_from_rfc3339(started_at)
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or(now);
+        let paused_ms: i64 = conn.query_row(
+            "SELECT paused_ms FROM sessions WHERE id=?1",
+            rusqlite::params![session_id],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        let elapsed_mins = ((now - start_time).num_milliseconds() - paused_ms) / 60_000;
+
+        let milestones: &[(i64, i32, &str, &str)] = &[
+            (60,  10, "session_combo_60",  "60 min deep work combo! 🔥 +10"),
+            (90,  15, "session_combo_90",  "90 min beast mode! 🔥 +15"),
+            (120, 20, "session_combo_120", "2 hour legend run! 🔥 +20"),
+        ];
+
+        for &(threshold, delta, reason, explanation) in milestones {
+            if elapsed_mins >= threshold {
+                let already: i32 = conn.query_row(
+                    "SELECT COUNT(*) FROM score_events WHERE session_id=?1 AND reason_code=?2",
+                    rusqlite::params![session_id, reason],
+                    |r| r.get(0),
+                ).unwrap_or(1);
+                if already == 0 {
+                    emit_score(&conn, &now_str, Some(session_id), delta, reason, explanation, &raw_id);
+                    update_session_score(&conn, session_id, delta);
+                }
+            }
+        }
+    }
 
     let (category, ppm) = match &rule {
         Some((cat, ppm)) => (cat.as_str(), *ppm),
@@ -154,7 +187,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     };
 
     match (category, &session) {
-        ("positive", Some((session_id, _))) if ppm > 0 => {
+        ("positive", Some((session_id, _, _))) if ppm > 0 => {
             // Award productive minute points
             let delta = ppm; // points_per_minute, awarded each tick (1 min)
             emit_score(&conn, &now_str, Some(session_id), delta,
@@ -176,7 +209,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
                 update_session_score(&conn, session_id, 5);
             }
         }
-        ("negative", Some((session_id, _))) => {
+        ("negative", Some((session_id, _, _))) => {
             // In-session penalty for negative apps (sites handled by browser extension)
             emit_score(&conn, &now_str, Some(session_id), -3,
                 "red_site_penalty",

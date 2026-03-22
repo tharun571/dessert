@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  rewardList, rewardCreate, rewardPurchase, inventoryListAvailable, inventoryConsume, sessionGetCurrent,
+  rewardList, rewardCreate, rewardPurchase, sessionGetCurrent,
 } from '../../lib/api';
-import type { Reward, InventoryItem, Session } from '../../lib/types';
-import { playClick, playPurchase, playSuccess } from '../../lib/sounds';
+import type { Reward, Session } from '../../lib/types';
+import { playClick, playPurchase } from '../../lib/sounds';
 
 const SCOPE_EMOJI: Record<string, string> = {
   x: '𝕏',
@@ -14,7 +14,6 @@ const SCOPE_EMOJI: Record<string, string> = {
 
 export default function RewardsPage() {
   const [rewards, setRewards] = useState<Reward[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [flash, setFlash] = useState('');
@@ -26,9 +25,8 @@ export default function RewardsPage() {
   const [newScope, setNewScope] = useState('none');
 
   const refresh = useCallback(async () => {
-    const [r, inv, s] = await Promise.all([rewardList(), inventoryListAvailable(), sessionGetCurrent()]);
+    const [r, s] = await Promise.all([rewardList(), sessionGetCurrent()]);
     setRewards(r);
-    setInventory(inv);
     setSession(s);
   }, []);
 
@@ -43,13 +41,6 @@ export default function RewardsPage() {
     await rewardPurchase(reward.id, session?.id);
     playPurchase();
     showFlash(`🎉 ${reward.name} added to inventory!`);
-    await refresh();
-  };
-
-  const handleConsume = async (item: InventoryItem) => {
-    await inventoryConsume(item.id, session?.id);
-    playSuccess();
-    showFlash(`✨ enjoy your ${item.reward_name}!`);
     await refresh();
   };
 
@@ -92,24 +83,6 @@ export default function RewardsPage() {
       )}
 
       {/* Inventory */}
-      {inventory.length > 0 && (
-        <div className="mb-6">
-          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">inventory</p>
-          <div className="grid grid-cols-2 gap-2">
-            {inventory.map(item => (
-              <button
-                key={item.id}
-                onClick={() => handleConsume(item)}
-                className="flex items-center justify-between bg-violet-500/10 border border-violet-500/25 rounded-xl p-3.5 hover:bg-violet-500/20 hover:border-violet-500/40 transition-all card-hover card-glow-violet"
-              >
-                <span className="text-sm text-violet-300">{item.reward_name}</span>
-                <span className="text-xs text-violet-500">use →</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Add form */}
       {showAdd && (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-4 mb-6">

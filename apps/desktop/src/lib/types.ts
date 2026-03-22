@@ -6,6 +6,7 @@ export interface DayPlanningStatus {
   session_count: number;
   needs_planning: boolean;
   suggest_tomorrow: boolean;
+  ask_sunlight: boolean;
 }
 
 export interface Session {
@@ -17,6 +18,8 @@ export interface Session {
   title: string | null;
   score_total: number;
   created_at: string;
+  paused_ms: number;
+  paused_at: string | null;
 }
 
 export interface Task {
@@ -67,11 +70,23 @@ export interface ScoreEvent {
   related_event_id: string | null;
 }
 
+export interface SessionEndStats {
+  duration_ms: number;
+  is_longest_today: boolean;
+  is_longest_week: boolean;
+  is_longest_ever: boolean;
+}
+
 export interface DayScore {
   total: number;
   earned: number;
   lost: number;
   spent: number;
+}
+
+export interface OverallScore {
+  total: number;
+  days: number;
 }
 
 export interface AppRule {

@@ -1,4 +1,4 @@
-use crate::models::{Session, DayPlanningStatus};
+use crate::models::{Session, DayPlanningStatus, SessionEndStats};
 use crate::AppState;
 use tauri::State;
 use uuid::Uuid;
@@ -14,11 +14,13 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<Session> {
         title: row.get(5)?,
         score_total: row.get(6)?,
         created_at: row.get(7)?,
+        paused_ms: row.get(8)?,
+        paused_at: row.get(9)?,
     })
 }
 
 const SESSION_SELECT: &str =
-    "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at FROM sessions WHERE id=?1";
+    "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at, paused_ms, paused_at FROM sessions WHERE id=?1";
 
 fn get_session(db: &rusqlite::Connection, id: &str) -> Result<Session, String> {
     db.query_row(SESSION_SELECT, rusqlite::params![id], row_to_session)
@@ -84,9 +86,10 @@ pub fn session_start(
 #[tauri::command]
 pub fn session_pause(state: State<AppState>, session_id: String) -> Result<Session, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
     db.execute(
-        "UPDATE sessions SET state='paused' WHERE id=?1 AND state='active'",
-        rusqlite::params![session_id],
+        "UPDATE sessions SET state='paused', paused_at=?1 WHERE id=?2 AND state='active'",
+        rusqlite::params![now, session_id],
     ).map_err(|e| e.to_string())?;
     get_session(&db, &session_id)
 }
@@ -94,10 +97,31 @@ pub fn session_pause(state: State<AppState>, session_id: String) -> Result<Sessi
 #[tauri::command]
 pub fn session_resume(state: State<AppState>, session_id: String) -> Result<Session, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.execute(
-        "UPDATE sessions SET state='active' WHERE id=?1 AND state='paused'",
+    let now = Utc::now();
+
+    // Read when this pause started, accumulate into paused_ms
+    let paused_at_str: Option<String> = db.query_row(
+        "SELECT paused_at FROM sessions WHERE id=?1",
         rusqlite::params![session_id],
+        |r| r.get(0),
     ).map_err(|e| e.to_string())?;
+
+    if let Some(paused_at_str) = paused_at_str {
+        let paused_at = chrono::DateTime::parse_from_rfc3339(&paused_at_str)
+            .map_err(|e| e.to_string())?
+            .with_timezone(&Utc);
+        let added_ms = (now - paused_at).num_milliseconds().max(0);
+        db.execute(
+            "UPDATE sessions SET state='active', paused_ms = paused_ms + ?1, paused_at = NULL WHERE id=?2 AND state='paused'",
+            rusqlite::params![added_ms, session_id],
+        ).map_err(|e| e.to_string())?;
+    } else {
+        db.execute(
+            "UPDATE sessions SET state='active', paused_at = NULL WHERE id=?1 AND state='paused'",
+            rusqlite::params![session_id],
+        ).map_err(|e| e.to_string())?;
+    }
+
     get_session(&db, &session_id)
 }
 
@@ -116,7 +140,7 @@ pub fn session_stop(state: State<AppState>, session_id: String) -> Result<Sessio
 pub fn session_get_current(state: State<AppState>) -> Result<Option<Session>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let result = db.query_row(
-        "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at
+        "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at, paused_ms, paused_at
          FROM sessions WHERE state IN ('active','paused') ORDER BY started_at DESC LIMIT 1",
         [],
         row_to_session,
@@ -132,7 +156,7 @@ pub fn session_get_current(state: State<AppState>) -> Result<Option<Session>, St
 pub fn session_list_for_day(state: State<AppState>, date: String) -> Result<Vec<Session>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db.prepare(
-        "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at
+        "SELECT id, started_at, ended_at, state, planned_minutes, title, score_total, created_at, paused_ms, paused_at
          FROM sessions WHERE date(started_at) = ?1 ORDER BY started_at DESC"
     ).map_err(|e| e.to_string())?;
     let result = stmt.query_map(rusqlite::params![date], row_to_session)
@@ -169,6 +193,12 @@ pub fn day_planning_status(
         |r| r.get(0),
     ).unwrap_or(0);
 
+    let sunlight_logged: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='sunlight' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
     Ok(DayPlanningStatus {
         local_date,
         has_tasks: task_count > 0,
@@ -177,5 +207,85 @@ pub fn day_planning_status(
         session_count,
         needs_planning: task_count == 0 && session_count == 0,
         suggest_tomorrow: hour >= 17 && tomorrow_task_count == 0,
+        ask_sunlight: hour < 12 && session_count == 0 && sunlight_logged == 0,
     })
+}
+
+#[tauri::command]
+pub fn session_end_stats(state: State<AppState>, session_id: String) -> Result<SessionEndStats, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get this session's data
+    let (started_at, ended_at_opt, paused_ms): (String, Option<String>, i64) = db.query_row(
+        "SELECT started_at, ended_at, paused_ms FROM sessions WHERE id=?1",
+        rusqlite::params![session_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).map_err(|e| e.to_string())?;
+
+    let ended_at = ended_at_opt.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let start = chrono::DateTime::parse_from_rfc3339(&started_at).map_err(|e| e.to_string())?;
+    let end = chrono::DateTime::parse_from_rfc3339(&ended_at).map_err(|e| e.to_string())?;
+    let duration_ms = ((end - start).num_milliseconds() - paused_ms).max(0);
+
+    let today_date = start.format("%Y-%m-%d").to_string();
+
+    // Helper: compute active duration in ms for a session row (wall-clock minus paused_ms)
+    // We use (julianday(ended_at) - julianday(started_at)) * 86400000 - paused_ms
+    let duration_sql = "(CAST((julianday(ended_at) - julianday(started_at)) * 86400000 AS INTEGER) - paused_ms)";
+
+    let longest_today: i64 = db.query_row(
+        &format!("SELECT COALESCE(MAX({duration_sql}), 0) FROM sessions
+                  WHERE state='ended' AND ended_at IS NOT NULL AND date(started_at)=?1"),
+        rusqlite::params![today_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let longest_week: i64 = db.query_row(
+        &format!("SELECT COALESCE(MAX({duration_sql}), 0) FROM sessions
+                  WHERE state='ended' AND ended_at IS NOT NULL
+                    AND started_at >= date('now', 'weekday 1', '-7 days')"),
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let longest_ever: i64 = db.query_row(
+        &format!("SELECT COALESCE(MAX({duration_sql}), 0) FROM sessions
+                  WHERE state='ended' AND ended_at IS NOT NULL"),
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    Ok(SessionEndStats {
+        duration_ms,
+        is_longest_today: duration_ms > 0 && duration_ms >= longest_today,
+        is_longest_week: duration_ms > 0 && duration_ms >= longest_week,
+        is_longest_ever: duration_ms > 0 && duration_ms >= longest_ever,
+    })
+}
+
+#[tauri::command]
+pub fn log_sunlight(state: State<AppState>, local_date: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    // Idempotent: skip if already logged today
+    let already: i32 = db.query_row(
+        "SELECT COUNT(*) FROM score_events WHERE reason_code='sunlight' AND date(ts)=?1",
+        rusqlite::params![local_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    if already > 0 {
+        return Ok(());
+    }
+
+    db.execute(
+        "INSERT INTO score_events (id, ts, session_id, delta, reason_code, explanation, related_event_id)
+         VALUES (?1, ?2, NULL, 10, 'sunlight', 'got some sunlight this morning ☀️', NULL)",
+        rusqlite::params![id, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
 }

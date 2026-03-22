@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes confettiFall {
+  0%   { transform: translateY(0) translateX(0) rotate(0deg); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(100vh) translateX(var(--sway)) rotate(var(--rotate)); opacity: 0; }
+}
+
 @layer base {
   * {
     -webkit-font-smoothing: antialiased;

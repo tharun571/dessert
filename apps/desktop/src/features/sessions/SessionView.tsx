@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   sessionGetCurrent, sessionStart, sessionStop, sessionPause, sessionResume,
-  taskListForDate, taskCreate, taskMarkDone, rewardList, rewardPurchase, trackerGetStatus,
-  todayDate, tomorrowDate, currentHour, dayPlanningStatus,
+  taskListForDate, taskCreate, taskMarkDone, trackerGetStatus,
+  todayDate, tomorrowDate, currentHour, dayPlanningStatus, logSunlight,
 } from '../../lib/api';
-import type { Session, Task, Reward, TrackerStatus, DayPlanningStatus } from '../../lib/types';
-import { playClick, playSuccess, playPurchase, playError, playComplete } from '../../lib/sounds';
+import type { Session, Task, TrackerStatus, DayPlanningStatus } from '../../lib/types';
+import { playClick, playSuccess, playError, playComplete } from '../../lib/sounds';
 
 function formatDuration(startedAt: string): string {
   const start = new Date(startedAt).getTime();
@@ -20,14 +20,12 @@ function formatDuration(startedAt: string): string {
 export default function SessionView() {
   const [session, setSession] = useState<Session | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [rewards, setRewards] = useState<Reward[]>([]);
   const [trackerStatus, setTrackerStatus] = useState<TrackerStatus | null>(null);
   const [planning, setPlanning] = useState<DayPlanningStatus | null>(null);
   const [timer, setTimer] = useState('00:00');
   const [title, setTitle] = useState('');
   const [minutes, setMinutes] = useState('');
   const [showStart, setShowStart] = useState(false);
-  const [buyMsg, setBuyMsg] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,22 +34,21 @@ export default function SessionView() {
   const [questTitle, setQuestTitle] = useState('');
   const [questMinutes, setQuestMinutes] = useState('');
   const [questMainQuest, setQuestMainQuest] = useState(false);
+  const [sunlightAnswered, setSunlightAnswered] = useState(false);
 
   const today = todayDate();
   const tomorrow = tomorrowDate();
   const hour = currentHour();
 
   const refresh = useCallback(async () => {
-    const [s, t, r, ts, plan] = await Promise.all([
+    const [s, t, ts, plan] = await Promise.all([
       sessionGetCurrent(),
       taskListForDate(today),
-      rewardList(),
       trackerGetStatus(),
       dayPlanningStatus(today, tomorrow, hour),
     ]);
     setSession(s);
     setTasks(t);
-    setRewards(r);
     setTrackerStatus(ts);
     setPlanning(plan);
   }, [today, tomorrow, hour]);
@@ -146,14 +143,6 @@ export default function SessionView() {
   const handleMarkDone = (task_id: string) => run(async () => {
     playSuccess();
     await taskMarkDone(task_id);
-    await refresh();
-  });
-
-  const handleBuyReward = (reward_id: string, reward_name: string) => run(async () => {
-    await rewardPurchase(reward_id, session?.id);
-    playPurchase();
-    setBuyMsg(`🎉 ${reward_name} added to inventory!`);
-    setTimeout(() => setBuyMsg(''), 3000);
     await refresh();
   });
 
@@ -324,6 +313,33 @@ export default function SessionView() {
             </button>
           </div>
         </div>
+      ) : !sunlightAnswered && planning?.ask_sunlight ? (
+        /* Sunlight check — morning, first session */
+        <div className="bg-zinc-900/60 border border-yellow-500/25 rounded-2xl p-6 mb-6"
+          style={{ boxShadow: '0 0 0 1px rgba(234,179,8,0.2), 0 0 20px rgba(234,179,8,0.07)' }}>
+          <p className="text-base font-semibold text-zinc-100 mb-1">☀️ did you get some sunlight?</p>
+          <p className="text-xs text-zinc-500 mb-4">step outside before diving in — even 5 minutes counts</p>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                playSuccess();
+                await logSunlight(today);
+                setSunlightAnswered(true);
+                await refresh();
+              }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02]"
+              style={{ background: 'linear-gradient(135deg, #eab308 0%, #f59e0b 100%)' }}
+            >
+              yes! +10 pts ☀️
+            </button>
+            <button
+              onClick={() => { playClick(); setSunlightAnswered(true); }}
+              className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 text-sm transition-all"
+            >
+              not yet
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 mb-6 text-center">
           <p className="text-zinc-400 mb-4">no active session</p>
@@ -388,30 +404,6 @@ export default function SessionView() {
         </div>
       )}
 
-      {/* Quick buy reward */}
-      {buyMsg && (
-        <div className="bg-emerald-900/20 border border-emerald-500/25 rounded-2xl p-3 mb-4 text-sm text-emerald-300">
-          {buyMsg}
-        </div>
-      )}
-      {rewards.slice(0, 4).length > 0 && (
-        <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-5">
-          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">quick buy</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {rewards.slice(0, 4).map(r => (
-              <button
-                key={r.id}
-                onClick={() => handleBuyReward(r.id, r.name)}
-                disabled={loading}
-                className="flex items-center justify-between bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 hover:border-orange-500/40 rounded-xl px-3 py-2.5 text-sm transition-all disabled:opacity-50 hover:scale-[1.02]"
-              >
-                <span className="text-zinc-200">{r.name}</span>
-                <span className="text-orange-400 font-mono text-xs font-bold">{r.cost}pt</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

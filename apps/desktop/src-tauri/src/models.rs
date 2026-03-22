@@ -9,6 +9,8 @@ pub struct DayPlanningStatus {
     pub session_count: i32,
     pub needs_planning: bool,
     pub suggest_tomorrow: bool,
+    /// true if it's morning (hour < 12), first session of the day, and sunlight not yet logged
+    pub ask_sunlight: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +23,8 @@ pub struct Session {
     pub title: Option<String>,
     pub score_total: i32,
     pub created_at: String,
+    pub paused_ms: i64,
+    pub paused_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +111,20 @@ pub struct DayScore {
     pub earned: i32,
     pub lost: i32,
     pub spent: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverallScore {
+    pub total: i32,
+    pub days: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEndStats {
+    pub duration_ms: i64,
+    pub is_longest_today: bool,
+    pub is_longest_week: bool,
+    pub is_longest_ever: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

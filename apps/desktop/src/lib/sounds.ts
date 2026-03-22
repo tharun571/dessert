@@ -64,3 +64,13 @@ export function playComplete() {
     tone(1100, 'sine', 120, 0.15, 0.06);
   } catch (_) {}
 }
+
+export function playCelebrate() {
+  try {
+    tone(523, 'sine', 120, 0.18, 0);
+    tone(659, 'sine', 120, 0.18, 0.12);
+    tone(784, 'sine', 120, 0.18, 0.24);
+    tone(1047, 'sine', 300, 0.22, 0.38);
+    tone(1319, 'sine', 250, 0.18, 0.55);
+  } catch (_) {}
+}

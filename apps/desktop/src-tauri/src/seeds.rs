@@ -30,15 +30,15 @@ pub fn seed_if_empty(conn: &Connection) -> Result<()> {
 fn seed_rewards(conn: &Connection) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     let rewards = vec![
-        (Uuid::new_v4().to_string(), "Nap", 5, None::<i32>, 1, "none", None::<i32>),
-        (Uuid::new_v4().to_string(), "Ice cream", 50, None, 1, "none", None),
-        (Uuid::new_v4().to_string(), "Biriyani", 50, None, 1, "none", None),
-        (Uuid::new_v4().to_string(), "Smoke", 100, None, 1, "none", Some(120)),
-        (Uuid::new_v4().to_string(), "1 TV episode", 25, None, 1, "none", None),
-        (Uuid::new_v4().to_string(), "X break", 25, Some(20), 0, "x", None),
-        (Uuid::new_v4().to_string(), "YouTube break", 25, Some(20), 0, "youtube", None),
-        (Uuid::new_v4().to_string(), "Cold drink", 10, None, 0, "none", None),
-        (Uuid::new_v4().to_string(), "Evening with the boys", 75, None, 1, "none", None),
+        (Uuid::new_v4().to_string(), "Nap", 50, None::<i32>, 1, "none", None::<i32>),
+        (Uuid::new_v4().to_string(), "Ice cream", 500, None, 1, "none", None),
+        (Uuid::new_v4().to_string(), "Biriyani", 500, None, 1, "none", None),
+        (Uuid::new_v4().to_string(), "Smoke", 1000, None, 1, "none", Some(120)),
+        (Uuid::new_v4().to_string(), "1 TV episode", 250, None, 1, "none", None),
+        (Uuid::new_v4().to_string(), "X break", 250, Some(20), 0, "x", None),
+        (Uuid::new_v4().to_string(), "YouTube break", 250, Some(20), 0, "youtube", None),
+        (Uuid::new_v4().to_string(), "Cold drink", 100, None, 0, "none", None),
+        (Uuid::new_v4().to_string(), "Evening with the boys", 750, None, 1, "none", None),
     ];
 
     for (id, name, cost, duration, ends_session, scope, cooldown) in rewards {

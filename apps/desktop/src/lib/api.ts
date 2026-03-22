@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Session, Task, Reward, InventoryItem, ScoreEvent, DayScore, AllRules,
-  CreateTaskInput, CreateRewardInput, DayPlanningStatus,
+  Session, Task, Reward, InventoryItem, ScoreEvent, DayScore, OverallScore, AllRules,
+  CreateTaskInput, CreateRewardInput, DayPlanningStatus, SessionEndStats,
 } from './types';
 
 // Sessions
@@ -11,6 +11,9 @@ export const sessionStart = (plannedMinutes?: number, title?: string, localDate?
 export const dayPlanningStatus = (localDate: string, localTomorrowDate: string, hour: number) =>
   invoke<DayPlanningStatus>('day_planning_status', { localDate, localTomorrowDate, hour });
 
+export const logSunlight = (localDate: string) =>
+  invoke<void>('log_sunlight', { localDate });
+
 export const sessionPause = (sessionId: string) =>
   invoke<Session>('session_pause', { sessionId });
 
@@ -19,6 +22,9 @@ export const sessionResume = (sessionId: string) =>
 
 export const sessionStop = (sessionId: string) =>
   invoke<Session>('session_stop', { sessionId });
+
+export const sessionEndStats = (sessionId: string) =>
+  invoke<SessionEndStats>('session_end_stats', { sessionId });
 
 export const sessionGetCurrent = () =>
   invoke<Session | null>('session_get_current');
@@ -73,6 +79,9 @@ export const inventoryConsume = (itemId: string, consumeSessionId?: string) =>
 // Scoring
 export const scoreGetToday = () =>
   invoke<DayScore>('score_get_today');
+
+export const scoreGetOverall = () =>
+  invoke<OverallScore>('score_get_overall');
 
 export const timelineGetForDay = (date: string) =>
   invoke<ScoreEvent[]>('timeline_get_for_day', { date });

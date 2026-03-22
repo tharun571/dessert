@@ -6,6 +6,9 @@ const REASON_META: Record<string, { emoji: string; color: string; border: string
   session_started:         { emoji: '⚡', color: 'text-emerald-400', border: 'border-emerald-500/40' },
   productive_minute:       { emoji: '✅', color: 'text-emerald-400', border: 'border-emerald-500/25' },
   combo_bonus:             { emoji: '🔥', color: 'text-orange-400',  border: 'border-orange-500/40' },
+  session_combo_60:        { emoji: '🔥', color: 'text-orange-400',  border: 'border-orange-500/40' },
+  session_combo_90:        { emoji: '🔥', color: 'text-orange-500',  border: 'border-orange-500/50' },
+  session_combo_120:       { emoji: '🏆', color: 'text-amber-400',   border: 'border-amber-500/50' },
   task_completed:          { emoji: '📋', color: 'text-emerald-400', border: 'border-emerald-500/25' },
   main_quest_completed:    { emoji: '⭐', color: 'text-amber-400',   border: 'border-amber-500/40' },
   clean_session_bonus:     { emoji: '🏆', color: 'text-amber-400',   border: 'border-amber-500/40' },
@@ -13,6 +16,7 @@ const REASON_META: Record<string, { emoji: string; color: string; border: string
   ambient_red_site_penalty:{ emoji: '💸', color: 'text-red-400',     border: 'border-red-500/25' },
   recovery_bonus:          { emoji: '💪', color: 'text-emerald-400', border: 'border-emerald-500/25' },
   reward_purchased:        { emoji: '🛍', color: 'text-violet-400',  border: 'border-violet-500/30' },
+  sunlight:                { emoji: '☀️', color: 'text-yellow-400',  border: 'border-yellow-500/30' },
 };
 
 function formatTime(ts: string): string {
