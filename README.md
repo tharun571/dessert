@@ -42,8 +42,10 @@ pnpm tauri dev
 |-------|--------|
 | start session | +5 |
 | morning sunlight check-in | +10 |
-| productive app (per min) | +1 |
+| session minute (any app, per min) | +1 |
+| productive app bonus (per min) | +1 |
 | 25min focus streak | +5 |
+| 30 min session milestone | +5 |
 | 60 min session combo | +10 |
 | 90 min session combo | +15 |
 | 2 hr session combo | +20 |

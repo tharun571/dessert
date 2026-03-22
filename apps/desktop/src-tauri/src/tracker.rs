@@ -174,6 +174,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         let elapsed_mins = (((now - start_time).num_milliseconds() - paused_ms) / 60_000).max(0);
 
         let milestones: &[(i64, i32, &str, &str)] = &[
+            (30,  5,  "session_combo_30",  "30 min focus streak! +5"),
             (60,  10, "session_combo_60",  "60 min deep work combo! 🔥 +10"),
             (90,  15, "session_combo_90",  "90 min beast mode! 🔥 +15"),
             (120, 20, "session_combo_120", "2 hour legend run! 🔥 +20"),
@@ -199,10 +200,22 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         None => ("neutral", 0),
     };
 
+    // Base session minute: +1 for every non-idle tick while a session is active,
+    // regardless of which app is in focus (as long as it's not a negative/penalty app).
+    if let Some((ref session_id, _, _)) = session {
+        if category != "negative" {
+            emit_score(&conn, &now_str, Some(session_id), 1,
+                "session_minute",
+                &format!("session minute +1"),
+                &raw_id);
+            update_session_score(&conn, session_id, 1);
+        }
+    }
+
     match (category, &session) {
         ("positive", Some((session_id, _, _))) if ppm > 0 => {
-            // Award productive minute points
-            let delta = ppm; // points_per_minute, awarded each tick (1 min)
+            // Award bonus productive minute points on top of the base session_minute
+            let delta = ppm;
             emit_score(&conn, &now_str, Some(session_id), delta,
                 "productive_minute",
                 &format!("Productive minute in {} (+{})", app_name, delta),

@@ -5,8 +5,10 @@ import { playClick } from '../../lib/sounds';
 
 const REASON_META: Record<string, { emoji: string; color: string; border: string }> = {
   session_started:         { emoji: '⚡', color: 'text-emerald-400', border: 'border-emerald-500/40' },
+  session_minute:          { emoji: '⏱', color: 'text-zinc-400',    border: 'border-zinc-700/30' },
   productive_minute:       { emoji: '✅', color: 'text-emerald-400', border: 'border-emerald-500/25' },
   combo_bonus:             { emoji: '🔥', color: 'text-orange-400',  border: 'border-orange-500/40' },
+  session_combo_30:        { emoji: '⚡', color: 'text-emerald-400', border: 'border-emerald-500/40' },
   session_combo_60:        { emoji: '🔥', color: 'text-orange-400',  border: 'border-orange-500/40' },
   session_combo_90:        { emoji: '🔥', color: 'text-orange-500',  border: 'border-orange-500/50' },
   session_combo_120:       { emoji: '🏆', color: 'text-amber-400',   border: 'border-amber-500/50' },
