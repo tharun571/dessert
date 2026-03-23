@@ -38,8 +38,8 @@ pub fn session_start(
 
     // Gate: require at least one task to exist for today before the first session
     let task_count: i32 = db.query_row(
-        "SELECT COUNT(*) FROM tasks WHERE planned_for=?1 AND status IN ('planned','done')",
-        rusqlite::params![local_date],
+        "SELECT COUNT(*) FROM tasks WHERE (planned_for=?1 OR (planned_for<?1 AND status='planned')) AND status IN ('planned','done')",
+        rusqlite::params![local_date, local_date],
         |r| r.get(0),
     ).unwrap_or(0);
 
@@ -178,8 +178,8 @@ pub fn day_planning_status(
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     let task_count: i32 = db.query_row(
-        "SELECT COUNT(*) FROM tasks WHERE planned_for=?1 AND status IN ('planned','done')",
-        rusqlite::params![local_date],
+        "SELECT COUNT(*) FROM tasks WHERE (planned_for=?1 OR (planned_for<?1 AND status='planned')) AND status IN ('planned','done')",
+        rusqlite::params![local_date, local_date],
         |r| r.get(0),
     ).unwrap_or(0);
 
