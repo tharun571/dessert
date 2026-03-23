@@ -37,12 +37,15 @@ dessert/
       features/
         home/
           HomePage.tsx             — merged dashboard+session: score banner, live timer,
-                                     planning gate, sunlight prompt, tracker status, quest checklist
+                                     planning gate, sunlight/gym prompts, tracker status,
+                                     quest checklist
           SessionEndOverlay.tsx    — confetti overlay shown on session stop (records + summary)
-        tasks/TasksPage.tsx        — quest management: today/tomorrow tabs, add/done/delete
-        rewards/RewardsPage.tsx    — reward shop only (no inventory here)
-        inventory/InventoryPage.tsx — inventory: list and consume available items
-        timeline/TimelinePage.tsx  — score event feed with colored left-border accents
+        tasks/TasksPage.tsx        — quest management: today/tomorrow tabs, habits section,
+                                     add/done/reopen/delete quests, carried-over task badge
+        rewards/RewardsPage.tsx    — "desserts" shop: buy rewards, shows balance, greys out
+                                     unaffordable items, inline edit/delete
+        inventory/InventoryPage.tsx — inventory: available items (use button) + used items history
+        timeline/TimelinePage.tsx  — today/overall tabs: score stats + event feed with reason_code colors
         settings/SettingsPage.tsx  — app/site rules viewer + scoring reference table
 
     src-tauri/
@@ -52,13 +55,13 @@ dessert/
         main.rs                    — binary entry (just calls lib::run())
         lib.rs                     — AppState struct, Tauri builder, all command registrations
         db.rs                      — sqlite open + WAL mode + full schema migration + ALTER TABLE migrations
-        models.rs                  — all rust structs (Session, Task, Reward, SessionEndStats, ...)
+        models.rs                  — all rust structs (Session, Task, Reward, SessionEndStats, DayPlanningStatus, ...)
         seeds.rs                   — default rewards, app_rules, site_rules (runs once on first launch)
         tracker.rs                 — macOS background thread: app detection + scoring + combo milestones
         browser_bridge.rs          — HTTP server on :43137 receiving extension scroll events
         commands/
           mod.rs                   — declares all command submodules
-          sessions.rs              — session CRUD + day_planning_status + log_sunlight + session_end_stats
+          sessions.rs              — session CRUD + day_planning_status + habit logging (sunlight/gym/book/walk/no_outside_food) + unlog_habit + session_end_stats
           tasks.rs                 — task CRUD (create/update/mark_done/reopen/delete/list)
           rewards.rs               — reward CRUD + purchase + inventory consume
           scoring.rs               — score_get_today, score_get_overall, timeline_get_for_day
@@ -147,8 +150,9 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 - `id TEXT PK`, `title TEXT`, `planned_for TEXT` (ISO date "2026-03-22"), `estimated_minutes?`
 - `is_main_quest INTEGER` (0/1), `status TEXT` (planned|done|skipped)
 - `completed_at TEXT?`, `completion_source TEXT`, `llm_verdict_json TEXT?`, `notes TEXT?`
-- filtered by `planned_for` exact string match — frontend passes local date via `todayDate()`
+- **carryover**: `task_list_for_date` returns tasks where `planned_for = date OR (planned_for < date AND status = 'planned')` — uncompleted tasks from prior days show up automatically with a "↩ carried over" badge
 - **idempotency**: `task_mark_done` checks current status before awarding points — re-completing a done task does NOT award points again
+- **reopen deducts points**: `task_reopen` inserts a negative `task_reopened` score event to reverse the completion bonus
 
 **rewards**
 - `id TEXT PK`, `name TEXT UNIQUE`, `cost INTEGER`, `duration_minutes?`
@@ -189,15 +193,19 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 
 | reason_code | delta | trigger |
 |---|---|---|
-| `session_started` | +5 | session_start command |
-| `sunlight` | +10 | log_sunlight command (morning check-in, once per day) |
-| `productive_minute` | +1 | tracker: positive app active during session |
-| `combo_bonus` | +5 | tracker: 25min consecutive productive streak |
+| `session_started` | +5 | session_start (first 6 sessions of the day only) |
+| `session_combo_30` | +5 | tracker: session reaches 30 min of active work |
 | `session_combo_60` | +10 | tracker: session reaches 60 min of active work |
 | `session_combo_90` | +15 | tracker: session reaches 90 min of active work |
 | `session_combo_120` | +20 | tracker: session reaches 2 hrs of active work |
+| `sunlight` | +10 | log_sunlight (morning check-in, once per day, toggleable) |
+| `gym` | +10 | log_gym (once per day, toggleable) |
+| `book` | +10 | log_book (once per day, toggleable) |
+| `walk` | +10 | log_walk (once per day, toggleable) |
+| `no_outside_food` | +10 | log_no_outside_food (once per day, toggleable) |
 | `task_completed` | +15 | task_mark_done (normal task) |
 | `main_quest_completed` | +25 | task_mark_done when is_main_quest=1 |
+| `task_reopened` | −15 or −25 | task_reopen — reverses completion bonus |
 | `red_site_penalty` | −3/min | browser_bridge: in-session doomscroll |
 | `ambient_red_site_penalty` | −1/min | browser_bridge: doomscroll outside session |
 | `reward_purchased` | −cost | reward_purchase command |
@@ -205,6 +213,8 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 to add a new score event anywhere: INSERT into `score_events` then UPDATE `sessions SET score_total = score_total + delta WHERE id = session_id`.
 
 combo milestone reason codes (`session_combo_*`) are idempotent — checked with `SELECT COUNT(*) FROM score_events WHERE session_id=? AND reason_code=?` before inserting.
+
+habit reason codes (`sunlight`, `gym`, `book`, `walk`, `no_outside_food`) are toggleable — `unlog_habit(reason_code, local_date)` deletes the positive score event for that habit on that date.
 
 ---
 
@@ -226,16 +236,17 @@ pub struct AppState {
 
 Background thread, 60s tick (5s startup delay). No special permissions needed.
 
-- **`get_frontmost_app()`** — runs `lsappinfo front` CLI, parses `name=` and `bundleID=` fields
+- **`get_frontmost_app()`** — two-step: `lsappinfo front` returns the ASN (e.g. `ASN:0x0-0x10010:`), then `lsappinfo info <ASN>` returns full details including `name` and `bundleID`. This is required on macOS 15+ where `lsappinfo front` no longer inlines app details.
 - **`get_idle_seconds()`** — calls CoreGraphics `CGEventSourceSecondsSinceLastEventType` via extern C
 - AFK threshold: 600s of idle → stop scoring, mark idle
-- Scoring in active session: +1/min for positive apps, combo +5 at 25min streak, −3/min for negative apps
+- Scoring in active session: −3/min for negative apps
 - Scoring ambient (no session): −1/min for negative apps
 
-**time-based combo milestones** (checked every tick against active session):
-- 60 min of actual work time (paused_ms excluded) → `session_combo_60` +10, once per session
-- 90 min → `session_combo_90` +15, once per session
-- 120 min → `session_combo_120` +20, once per session
+**time-based combo milestones** (checked every tick against active session, each fires once per session):
+- 30 min of actual work time → `session_combo_30` +5
+- 60 min → `session_combo_60` +10
+- 90 min → `session_combo_90` +15
+- 120 min → `session_combo_120` +20
 
 elapsed calculation: `((now - started_at).num_milliseconds() - paused_ms) / 60_000`
 
@@ -263,13 +274,33 @@ Binds `127.0.0.1:43137`. Receives POST batches from the Arc/Chrome extension.
 `day_planning_status(local_date, local_tomorrow_date, hour)` is called on every 5s refresh.
 
 Returns `DayPlanningStatus`:
-- `needs_planning`: true if zero tasks for today AND zero sessions today → blocks session start
+- `needs_planning`: true if zero tasks for today (including carried-over planned tasks from prior days) AND zero sessions today → blocks session start
 - `ask_sunlight`: true if `hour < 12` AND zero sessions today AND `sunlight` not in score_events today
+- `ask_gym`: true if `hour >= 18` AND zero sessions started at or after 6pm today AND `gym` not logged today
 - `suggest_tomorrow`: true if `hour >= 17` AND zero tasks for tomorrow
+- `sunlight_done`, `gym_done`, `book_done`, `walk_done`, `no_outside_food_done`: boolean habit completion state for today
+- `*_at` fields: RFC3339 timestamp of when each habit was logged (null if not done)
 
-**session_start guard**: if `needs_planning` would be true at start time, `session_start` returns an Err.
+**session_start guard**: if task count (today's tasks + carried-over uncompleted tasks) is zero AND no sessions today, `session_start` returns an Err. Carried-over tasks bypass the planning gate.
 
 **timezone**: frontend always passes `todayDate()` = `new Date().toISOString().slice(0,10)`. backend never computes "today" on its own for date-gated logic.
+
+---
+
+## session start bonus cap
+
+`session_started` +5 is only awarded for the **first 6 sessions of the day**. The `session_count` is checked at `session_start` time — if `session_count >= 6`, no score event is inserted for that session start.
+
+---
+
+## task carryover
+
+`task_list_for_date(date)` uses:
+```sql
+WHERE planned_for = date OR (planned_for < date AND status = 'planned')
+ORDER BY is_main_quest DESC, planned_for ASC, created_at ASC
+```
+Uncompleted tasks from prior days appear in today's list with a "↩ carried over" badge. The planning gate counts these tasks, so if carryover tasks exist you can start a session without adding new quests.
 
 ---
 
@@ -289,7 +320,7 @@ When `handleStop` is called in `HomePage.tsx`:
 ## frontend conventions
 
 ### routing
-`App.tsx` holds a `page` state string. no react-router. nav items: `home`, `tasks`, `rewards`, `inventory`, `timeline`, `settings`. home page is the merged dashboard+session page (no separate session nav item). sidebar shows tooltips on hover via `group`/`group-hover` Tailwind pattern.
+`App.tsx` holds a `page` state string. no react-router. nav items: `home`, `tasks`, `desserts` (rewards), `inventory`, `timeline`, `settings`. home page is the merged dashboard+session page. sidebar shows tooltips on hover via `group`/`group-hover` Tailwind pattern.
 
 ### data fetching
 - every page fetches its own data in a `refresh` callback wrapped in `useCallback`
@@ -369,6 +400,13 @@ Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 2. update the relevant `row_to_*` function and SELECT queries in the command file
 3. update the struct in `models.rs` and the TypeScript interface in `types.ts`
 
+**new habit:**
+1. add `log_<habit>` command in `commands/sessions.rs` (idempotent: check score_events before inserting)
+2. add `<habit>_done: bool` and `<habit>_at: Option<String>` to `DayPlanningStatus` in `models.rs` and `types.ts`
+3. register command in `lib.rs`, add API wrapper in `api.ts`
+4. add habit entry to the habits array in `TasksPage.tsx` and any prompt card in `HomePage.tsx`
+5. add `reason_code` to `REASON_META` in `TimelinePage.tsx`
+
 ---
 
 ## known gotchas
@@ -383,3 +421,6 @@ Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 - **paused_ms is in milliseconds, i64** — combo milestone elapsed uses `num_milliseconds()`, not `num_minutes()`, to avoid precision loss before subtracting paused_ms.
 - **task_mark_done is idempotent** — reads `status` before awarding points. calling it twice on a done task is safe (no double points).
 - **session_end_stats uses `>=` for record comparison** — a session that ties the record is considered a record. this means the first session of the day is always "longest today".
+- **lsappinfo two-step** — `lsappinfo front` only returns the ASN on macOS 15+. must follow with `lsappinfo info <ASN>` to get name/bundleID. using just `lsappinfo front` output for parsing will silently return nothing.
+- **rusqlite positional params** — if using `?1` multiple times in a query, only pass ONE value in `params![]` (SQLite counts unique param indices, not occurrences). using `params![val, val]` for a query with two `?1` references causes a "wrong number of parameters" error that silently returns unwrap_or default.
+- **habit unlog deletes the score event** — `unlog_habit` does `DELETE FROM score_events WHERE reason_code=? AND date(ts)=? AND delta > 0`. this means the habit's points disappear from total score cleanly, but there's no audit trail that it was ever logged.

@@ -6,9 +6,9 @@ dessert is a macOS productivity app that gamifies your focus. earn points for de
 
 ## how it works
 
-- **earn** — start a focus session and use productive apps (terminal, vs code, notion). every minute counts. hit 60, 90, or 120 minutes for combo bonuses.
+- **earn** — start a focus session. hit 30, 60, 90, or 120 minutes for milestone bonuses. log daily habits (sunlight, gym, reading, walking, no outside food) for bonus points.
 - **lose** — drift to X, LinkedIn, or YouTube while scrolling. grace period of 5 minutes, then penalty kicks in.
-- **spend** — buy rewards from the shop with your points. use them from your inventory.
+- **spend** — buy desserts (rewards) from the shop with your points. use them from your inventory.
 
 ## stack
 
@@ -40,15 +40,16 @@ pnpm tauri dev
 
 | event | points |
 |-------|--------|
-| start session | +5 |
-| morning sunlight check-in | +10 |
-| session minute (any app, per min) | +1 |
-| productive app bonus (per min) | +1 |
-| 25min focus streak | +5 |
+| start session (first 6 per day) | +5 |
 | 30 min session milestone | +5 |
 | 60 min session combo | +10 |
 | 90 min session combo | +15 |
 | 2 hr session combo | +20 |
+| morning sunlight check-in | +10 |
+| gym | +10 |
+| read a book | +10 |
+| go for a walk | +10 |
+| no outside food | +10 |
 | complete task | +15 |
 | complete main quest | +25 |
 | X/YT doomscroll (in session, per min) | −3 |
