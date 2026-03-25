@@ -45,12 +45,14 @@ graph TB
             app_rules_t["app_rules"]
             site_rules_t["site_rules"]
             effects_t["active_effects"]
+            settings_t["settings"]
+            nudge_t["nudge_events"]
         end
     end
 
     subgraph FRONTEND["react frontend (vite :1420)"]
         subgraph LIB["lib/"]
-            api["api.ts<br/>38 invoke() wrappers"]
+            api["api.ts<br/>34 invoke() wrappers"]
             types["types.ts<br/>TS interfaces"]
             sounds["sounds.ts<br/>Web Audio API"]
         end

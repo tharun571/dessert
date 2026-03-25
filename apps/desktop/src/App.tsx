@@ -5,9 +5,10 @@ import RewardsPage from './features/rewards/RewardsPage';
 import InventoryPage from './features/inventory/InventoryPage';
 import TimelinePage from './features/timeline/TimelinePage';
 import SettingsPage from './features/settings/SettingsPage';
+import AnalyticsPage from './features/analytics/AnalyticsPage';
 import { playClick } from './lib/sounds';
 
-type Page = 'home' | 'tasks' | 'rewards' | 'inventory' | 'timeline' | 'settings';
+type Page = 'home' | 'tasks' | 'rewards' | 'inventory' | 'timeline' | 'analytics' | 'settings';
 
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'home', label: 'home', icon: '🏠' },
@@ -15,6 +16,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'rewards', label: 'desserts', icon: '🍨' },
   { id: 'inventory', label: 'inventory', icon: '🎒' },
   { id: 'timeline', label: 'timeline', icon: '📊' },
+  { id: 'analytics', label: 'analytics', icon: '📈' },
   { id: 'settings', label: 'settings', icon: '⚙️' },
 ];
 
@@ -62,6 +64,7 @@ function App() {
         {page === 'rewards' && <RewardsPage />}
         {page === 'inventory' && <InventoryPage />}
         {page === 'timeline' && <TimelinePage />}
+        {page === 'analytics' && <AnalyticsPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
     </div>

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   Session, Task, Reward, InventoryItem, ScoreEvent, DayScore, OverallScore, AllRules,
-  CreateTaskInput, CreateRewardInput, DayPlanningStatus, SessionEndStats,
+  CreateTaskInput, CreateRewardInput, DayPlanningStatus, SessionEndStats, AnalyticsDashboard,
 } from './types';
 
 // Sessions
@@ -103,6 +103,10 @@ export const scoreGetOverall = () =>
 
 export const timelineGetForDay = (date: string) =>
   invoke<ScoreEvent[]>('timeline_get_for_day', { date });
+
+// Analytics
+export const analyticsGetDashboard = (localDate: string, days = 7) =>
+  invoke<AnalyticsDashboard>('analytics_get_dashboard', { localDate, days });
 
 // Rules
 export const rulesGetAll = () =>

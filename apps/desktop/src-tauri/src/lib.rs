@@ -77,6 +77,7 @@ pub fn run() {
             commands::scoring::score_get_today,
             commands::scoring::score_get_overall,
             commands::scoring::timeline_get_for_day,
+            commands::analytics::analytics_get_dashboard,
             commands::rules::rules_get_all,
             commands::rules::rules_upsert_app_rule,
             commands::rules::rules_upsert_site_rule,

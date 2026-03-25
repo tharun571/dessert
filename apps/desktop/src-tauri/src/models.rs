@@ -154,6 +154,50 @@ pub struct AllRules {
     pub site_rules: Vec<SiteRule>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsDayPoint {
+    pub date: String,
+    pub work_ms: i64,
+    pub sessions_started: i32,
+    pub points_earned: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsTodaySummary {
+    pub work_ms: i64,
+    pub idle_ms: i64,
+    pub sessions_started: i32,
+    pub points_earned: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivitySegment {
+    pub kind: String,
+    pub start_minute: i32,
+    pub end_minute: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityDot {
+    pub kind: String,
+    pub minute: i32,
+    pub ts: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodayActivity {
+    pub segments: Vec<ActivitySegment>,
+    pub dots: Vec<ActivityDot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsDashboard {
+    pub daywise: Vec<AnalyticsDayPoint>,
+    pub today_summary: AnalyticsTodaySummary,
+    pub today_activity: TodayActivity,
+}
+
 // --- Input types for commands ---
 
 #[derive(Debug, Deserialize)]

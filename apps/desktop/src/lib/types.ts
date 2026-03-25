@@ -97,6 +97,44 @@ export interface DayScore {
   time_spent_ms: number;
 }
 
+export interface AnalyticsDayPoint {
+  date: string;
+  work_ms: number;
+  sessions_started: number;
+  points_earned: number;
+}
+
+export interface AnalyticsTodaySummary {
+  work_ms: number;
+  idle_ms: number;
+  sessions_started: number;
+  points_earned: number;
+}
+
+export interface ActivitySegment {
+  kind: string;
+  start_minute: number;
+  end_minute: number;
+}
+
+export interface ActivityDot {
+  kind: string;
+  minute: number;
+  ts: string;
+  label: string;
+}
+
+export interface TodayActivity {
+  segments: ActivitySegment[];
+  dots: ActivityDot[];
+}
+
+export interface AnalyticsDashboard {
+  daywise: AnalyticsDayPoint[];
+  today_summary: AnalyticsTodaySummary;
+  today_activity: TodayActivity;
+}
+
 export interface OverallScore {
   total: number;
   days: number;

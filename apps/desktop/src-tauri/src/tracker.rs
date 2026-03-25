@@ -136,26 +136,44 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
 
     eprintln!("[tracker] tick: app=\"{}\" idle={:.0}s", app_name, idle_secs);
 
-    if is_idle {
-        eprintln!("[tracker] idle — skipping scoring");
-        return;
-    }
-
     let conn = db.lock().unwrap();
+
+    // Get active session first so raw events can be linked to session scope.
+    let session: Option<(String, i32, String)> = conn.query_row(
+        "SELECT id, score_total, started_at FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).ok();
+    eprintln!("[tracker] active session: {:?}", session.as_ref().map(|(id, score, _)| (id.as_str(), score)));
 
     // Emit raw event
     let raw_id = Uuid::new_v4().to_string();
     let payload = format!(
-        r#"{{"bundle_id":"{}", "app_name":"{}", "idle_secs":{:.0}}}"#,
-        bundle_id, app_name, idle_secs
+        r#"{{"bundle_id":"{}", "app_name":"{}", "idle_secs":{:.0}, "is_idle":{}}}"#,
+        bundle_id, app_name, idle_secs, is_idle
     );
+    let session_id_for_raw = session.as_ref().map(|(id, _, _)| id.as_str());
     let raw_insert_ok = conn.execute(
         "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)
-         VALUES (?1, ?2, 'mac_app', 'frontmost_app', ?3, NULL)",
-        rusqlite::params![raw_id, now_str, payload],
+         VALUES (?1, ?2, 'mac_app', 'frontmost_app', ?3, ?4)",
+        rusqlite::params![raw_id, now_str, payload, session_id_for_raw],
     ).is_ok();
     // Use raw_id as FK only if the insert succeeded; otherwise pass NULL to avoid FK violation
     let related_id: Option<&str> = if raw_insert_ok { Some(&raw_id) } else { None };
+
+    // Track last session id (used for future per-session state if needed)
+    {
+        let current_sid = session.as_ref().map(|(id, _, _)| id.clone());
+        let mut t = tracker.lock().unwrap();
+        if t.last_session_id != current_sid {
+            t.last_session_id = current_sid;
+        }
+    }
+
+    if is_idle {
+        eprintln!("[tracker] idle — skipping scoring");
+        return;
+    }
 
     // Look up app rule
     let rule: Option<(String, i32)> = conn.query_row(
@@ -168,23 +186,6 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         rusqlite::params![bundle_id, app_name],
         |r| Ok((r.get(0)?, r.get(1)?)),
     ).ok();
-
-    // Get active session
-    let session: Option<(String, i32, String)> = conn.query_row(
-        "SELECT id, score_total, started_at FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    ).ok();
-    eprintln!("[tracker] active session: {:?}", session.as_ref().map(|(id, score, _)| (id.as_str(), score)));
-
-    // Track last session id (used for future per-session state if needed)
-    {
-        let current_sid = session.as_ref().map(|(id, _, _)| id.clone());
-        let mut t = tracker.lock().unwrap();
-        if t.last_session_id != current_sid {
-            t.last_session_id = current_sid;
-        }
-    }
 
     // Award time-based combo bonuses (once per session per milestone)
     if let Some((ref session_id, _, ref started_at)) = session {

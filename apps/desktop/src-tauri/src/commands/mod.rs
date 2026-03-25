@@ -4,3 +4,4 @@ pub mod rewards;
 pub mod scoring;
 pub mod rules;
 pub mod tracker;
+pub mod analytics;
