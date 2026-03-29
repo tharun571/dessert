@@ -18,6 +18,12 @@ export interface DayPlanningStatus {
   walk_at: string | null;
   no_outside_food_done: boolean;
   no_outside_food_at: string | null;
+  cold_shower_done: boolean;
+  cold_shower_at: string | null;
+  meditation_done: boolean;
+  meditation_at: string | null;
+  singing_practice_done: boolean;
+  singing_practice_at: string | null;
 }
 
 export interface Session {
@@ -102,6 +108,8 @@ export interface AnalyticsDayPoint {
   work_ms: number;
   sessions_started: number;
   points_earned: number;
+  points_spent: number;
+  quests_completed: number;
 }
 
 export interface AnalyticsTodaySummary {
@@ -109,6 +117,7 @@ export interface AnalyticsTodaySummary {
   idle_ms: number;
   sessions_started: number;
   points_earned: number;
+  quests_completed: number;
 }
 
 export interface ActivitySegment {

@@ -1,6 +1,6 @@
 # dessert 🍨
 
-> turn work into a game.
+> turn work into game.
 
 `dessert` is a macOS productivity app that gamifies focus sessions.
 
@@ -10,14 +10,18 @@
 
 ## core features
 
-- **focus sessions**: start/pause/resume/stop, combo milestones at 30/60/90/120 minutes.
-- **tasks + habits**: quests, main quest bonus, daily habit logging.
+- **focus sessions**: start/pause/resume/stop, optional planned-duration countdown, combo milestones at 30/60/90/120/180 minutes, and auto-pause when idle for 10+ minutes.
+- **menu bar timer (macOS)**: always-on session timer in the top bar (`00:00` idle, running during active session, `⏸` while paused).
+- **tasks + habits**: quests, main quest bonus, mandatory 3-question reflection on quest completion, daily habit logging (including cold shower, meditation, singing practice).
 - **rewards + inventory**: buy rewards, consume later, optional penalty suppression windows.
-- **timeline**: today's score events plus a **24h activity line** with focus/idle segments and event dots.
+- **timeline**: today's score events plus a full-width **24h activity line** with focus/idle segments and event dots.
 - **analytics**: separate day-by-day comparisons (last 7 days from today) for:
   - work hours
   - sessions started
   - points earned
+  - quests completed
+  - net points (`earned - spent`)
+  - auto-refreshing cards/charts
 
 ## stack
 
@@ -54,7 +58,9 @@ pnpm tauri dev
 | 60 min combo | +10 |
 | 90 min combo | +15 |
 | 120 min combo | +20 |
+| 180 min combo | +30 |
 | sunlight / gym / book / walk / no outside food | +10 each |
+| cold shower / meditation / singing practice | +50 each |
 | complete task | +15 |
 | complete main quest | +25 |
 | reopen task | -15 / -25 |

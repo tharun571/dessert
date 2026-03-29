@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   sessionGetCurrent, sessionStart, sessionStop, sessionPause, sessionResume,
-  taskListForDate, taskCreate, taskMarkDone, trackerGetStatus,
+  taskListForDate, taskCreate, taskMarkDone, taskUpdate, trackerGetStatus,
   todayDate, tomorrowDate, currentHour, dayPlanningStatus, logSunlight,
 } from '../../lib/api';
 import type { Session, Task, TrackerStatus, DayPlanningStatus } from '../../lib/types';
 import { playClick, playSuccess, playError, playComplete } from '../../lib/sounds';
+import QuestReflectionModal, { buildQuestReflectionNotes, QuestReflectionAnswers } from '../../components/QuestReflectionModal';
 
 function formatDuration(startedAt: string): string {
   const start = new Date(startedAt).getTime();
@@ -28,6 +29,8 @@ export default function SessionView() {
   const [showStart, setShowStart] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reflectionTask, setReflectionTask] = useState<Task | null>(null);
+  const [reflectionSubmitting, setReflectionSubmitting] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Inline planning form (shown when gate is active on this page)
@@ -140,14 +143,48 @@ export default function SessionView() {
     setSession(s);
   });
 
-  const handleMarkDone = (task_id: string) => run(async () => {
-    playSuccess();
-    await taskMarkDone(task_id);
-    await refresh();
-  });
+  const handleMarkDone = (task: Task) => {
+    playClick();
+    setReflectionTask(task);
+  };
+
+  const handleReflectionSubmit = async (answers: QuestReflectionAnswers) => {
+    if (!reflectionTask) return;
+    setLoading(true);
+    setReflectionSubmitting(true);
+    setError('');
+    try {
+      await taskMarkDone(reflectionTask.id);
+      await taskUpdate({
+        id: reflectionTask.id,
+        notes: buildQuestReflectionNotes(reflectionTask.notes, answers),
+      });
+      playSuccess();
+      setReflectionTask(null);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+      playError();
+      throw e;
+    } finally {
+      setReflectionSubmitting(false);
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
+      {reflectionTask && (
+        <QuestReflectionModal
+          taskTitle={reflectionTask.title}
+          submitting={reflectionSubmitting}
+          onCancel={() => {
+            if (!reflectionSubmitting) setReflectionTask(null);
+          }}
+          onSubmit={handleReflectionSubmit}
+        />
+      )}
+
       <h1 className="text-xl font-bold mb-6 text-zinc-200">session</h1>
 
       {error && (
@@ -378,7 +415,7 @@ export default function SessionView() {
             {tasks.filter(t => t.status === 'planned').map(task => (
               <div key={task.id} className="flex items-center gap-3">
                 <button
-                  onClick={() => handleMarkDone(task.id)}
+                  onClick={() => handleMarkDone(task)}
                   disabled={loading}
                   className="w-5 h-5 rounded border border-zinc-600 hover:border-emerald-400 hover:bg-emerald-500/10 flex items-center justify-center shrink-0 transition-all disabled:opacity-50"
                 />

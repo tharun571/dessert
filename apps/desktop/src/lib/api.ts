@@ -26,6 +26,15 @@ export const logWalk = (localDate: string) =>
 export const logNoOutsideFood = (localDate: string) =>
   invoke<void>('log_no_outside_food', { localDate });
 
+export const logColdShower = (localDate: string) =>
+  invoke<void>('log_cold_shower', { localDate });
+
+export const logMeditation = (localDate: string) =>
+  invoke<void>('log_meditation', { localDate });
+
+export const logSingingPractice = (localDate: string) =>
+  invoke<void>('log_singing_practice', { localDate });
+
 export const unlogHabit = (reasonCode: string, localDate: string) =>
   invoke<void>('unlog_habit', { reasonCode, localDate });
 

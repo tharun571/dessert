@@ -3,6 +3,16 @@ import { inventoryListAvailable, inventoryListConsumed, sessionGetCurrent, inven
 import type { InventoryItem, Session } from '../../lib/types';
 import { playSuccess } from '../../lib/sounds';
 
+function formatGroupDate(ts: string | null): string {
+  if (!ts) return 'unknown date';
+  return new Date(ts).toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export default function InventoryPage() {
   const [available, setAvailable] = useState<InventoryItem[]>([]);
   const [consumed, setConsumed] = useState<InventoryItem[]>([]);
@@ -33,6 +43,17 @@ export default function InventoryPage() {
     showFlash(`✨ enjoy your ${item.reward_name}!`);
     await refresh();
   };
+
+  const consumedByDate = consumed.reduce((groups, item) => {
+    const dateKey = formatGroupDate(item.consumed_at);
+    const bucket = groups.get(dateKey);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      groups.set(dateKey, [item]);
+    }
+    return groups;
+  }, new Map<string, InventoryItem[]>());
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -84,20 +105,27 @@ export default function InventoryPage() {
           {consumed.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">used</p>
-              <div className="space-y-2">
-                {consumed.map(item => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between bg-zinc-800/40 border border-white/5 rounded-2xl p-4"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-zinc-400">{item.reward_name}</p>
-                      <p className="text-xs text-zinc-600 mt-0.5">
-                        {item.reward_cost} pts · used {item.consumed_at ? new Date(item.consumed_at).toLocaleDateString() : '—'}
-                      </p>
+              <div className="space-y-5">
+                {Array.from(consumedByDate.entries()).map(([dateLabel, items]) => (
+                  <section key={dateLabel}>
+                    <p className="text-[11px] uppercase tracking-wider text-zinc-500 mb-2">{dateLabel}</p>
+                    <div className="space-y-2">
+                      {items.map(item => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between bg-zinc-800/40 border border-white/5 rounded-2xl p-4"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-zinc-400">{item.reward_name}</p>
+                            <p className="text-xs text-zinc-600 mt-0.5">
+                              {item.reward_cost} pts · used {item.consumed_at ? new Date(item.consumed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </p>
+                          </div>
+                          <span className="text-xs text-zinc-600">✓ used</span>
+                        </div>
+                      ))}
                     </div>
-                    <span className="text-xs text-zinc-600">✓ used</span>
-                  </div>
+                  </section>
                 ))}
               </div>
             </div>

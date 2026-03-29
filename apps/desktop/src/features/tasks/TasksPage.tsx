@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   taskListForDate, taskCreate, taskMarkDone, taskReopen, taskDelete, taskUpdate,
-  todayDate, tomorrowDate, currentHour, dayPlanningStatus,
-  logSunlight, logGym, logBook, logWalk, logNoOutsideFood, unlogHabit,
+  todayDate, tomorrowDate,
 } from '../../lib/api';
-import type { Task, DayPlanningStatus } from '../../lib/types';
-import { playClick, playSuccess, playComplete } from '../../lib/sounds';
+import type { Task } from '../../lib/types';
+import { playClick, playComplete } from '../../lib/sounds';
+import QuestReflectionModal, { buildQuestReflectionNotes } from '../../components/QuestReflectionModal';
 
 type Tab = 'today' | 'tomorrow';
 
@@ -16,20 +16,17 @@ export default function TasksPage() {
   const [newMinutes, setNewMinutes] = useState('');
   const [newMainQuest, setNewMainQuest] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [planning, setPlanning] = useState<DayPlanningStatus | null>(null);
+  const [reflectionTask, setReflectionTask] = useState<Task | null>(null);
+  const [reflectionSubmitting, setReflectionSubmitting] = useState(false);
 
   const today = todayDate();
   const tomorrow = tomorrowDate();
   const date = tab === 'today' ? today : tomorrow;
 
   const refresh = useCallback(async () => {
-    const [t, p] = await Promise.all([
-      taskListForDate(date),
-      tab === 'today' ? dayPlanningStatus(today, tomorrow, currentHour()) : Promise.resolve(null),
-    ]);
+    const t = await taskListForDate(date);
     setTasks(t);
-    if (tab === 'today') setPlanning(p as DayPlanningStatus);
-  }, [date, tab, today, tomorrow]);
+  }, [date]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -53,11 +50,27 @@ export default function TasksPage() {
     if (task.status === 'done') {
       playClick();
       await taskReopen(task.id);
+      await refresh();
     } else {
-      playComplete();
-      await taskMarkDone(task.id);
+      playClick();
+      setReflectionTask(task);
     }
-    await refresh();
+  };
+
+  const handleReflectionSubmit = async (task: Task, answers: { understood: string; struggled: string; helped: string; }) => {
+    setReflectionSubmitting(true);
+    try {
+      await taskMarkDone(task.id);
+      await taskUpdate({
+        id: task.id,
+        notes: buildQuestReflectionNotes(task.notes, answers),
+      });
+      playComplete();
+      setReflectionTask(null);
+      await refresh();
+    } finally {
+      setReflectionSubmitting(false);
+    }
   };
 
   const handleToggleMainQuest = async (task: Task) => {
@@ -77,6 +90,17 @@ export default function TasksPage() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
+      {reflectionTask && (
+        <QuestReflectionModal
+          taskTitle={reflectionTask.title}
+          submitting={reflectionSubmitting}
+          onCancel={() => {
+            if (!reflectionSubmitting) setReflectionTask(null);
+          }}
+          onSubmit={(answers) => handleReflectionSubmit(reflectionTask, answers)}
+        />
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-zinc-200">quests</h1>
         <button
@@ -152,49 +176,6 @@ export default function TasksPage() {
           </div>
         </div>
       )}
-
-      {/* Habits — today only, hardcoded */}
-      {tab === 'today' && planning && (() => {
-        const fmtTime = (ts: string | null) => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
-        const habits = [
-          { label: '☀️ morning sunlight', done: planning.sunlight_done, at: fmtTime(planning.sunlight_at), code: 'sunlight',       onLog: () => logSunlight(today),      activeColor: 'border-yellow-500 bg-yellow-500/20 text-yellow-400', hoverColor: 'hover:border-yellow-400 hover:bg-yellow-500/10' },
-          { label: '💪 gym',              done: planning.gym_done,      at: fmtTime(planning.gym_at),      code: 'gym',            onLog: () => logGym(today),           activeColor: 'border-emerald-500 bg-emerald-500/20 text-emerald-400', hoverColor: 'hover:border-emerald-400 hover:bg-emerald-500/10' },
-          { label: '📚 read a book',      done: planning.book_done,     at: fmtTime(planning.book_at),     code: 'book',           onLog: () => logBook(today),          activeColor: 'border-blue-500 bg-blue-500/20 text-blue-400',         hoverColor: 'hover:border-blue-400 hover:bg-blue-500/10' },
-          { label: '🚶 go for a walk',    done: planning.walk_done,     at: fmtTime(planning.walk_at),     code: 'walk',           onLog: () => logWalk(today),          activeColor: 'border-sky-500 bg-sky-500/20 text-sky-400',           hoverColor: 'hover:border-sky-400 hover:bg-sky-500/10' },
-          { label: '🥗 no outside food',  done: planning.no_outside_food_done, at: fmtTime(planning.no_outside_food_at), code: 'no_outside_food', onLog: () => logNoOutsideFood(today), activeColor: 'border-lime-500 bg-lime-500/20 text-lime-400', hoverColor: 'hover:border-lime-400 hover:bg-lime-500/10' },
-        ];
-        return (
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">habits</p>
-            <div className="space-y-2">
-              {habits.map(h => (
-                <div key={h.label} className="flex items-center gap-3 bg-zinc-900/60 border border-white/5 rounded-2xl p-3.5">
-                  <button
-                    onClick={async () => {
-                      if (h.done) {
-                        playClick();
-                        await unlogHabit(h.code, today);
-                      } else {
-                        playSuccess();
-                        await h.onLog();
-                      }
-                      await refresh();
-                    }}
-                    className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all text-xs ${h.done ? h.activeColor : `border-zinc-600 ${h.hoverColor}`}`}
-                  >
-                    {h.done && '✓'}
-                  </button>
-                  <div className="flex-1">
-                    <p className="text-sm text-zinc-300">{h.label}</p>
-                    {h.done && h.at && <p className="text-xs text-zinc-600 mt-0.5">logged at {h.at} · +10 pts</p>}
-                  </div>
-                  {!h.done && <span className="text-xs text-zinc-600">+10 pts</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Empty state */}
       {planned.length === 0 && done.length === 0 && (

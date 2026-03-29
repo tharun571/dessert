@@ -1,8 +1,8 @@
-use crate::models::{AppRule, SiteRule, AllRules, UpsertAppRuleInput, UpsertSiteRuleInput};
+use crate::models::{AllRules, AppRule, SiteRule, UpsertAppRuleInput, UpsertSiteRuleInput};
 use crate::AppState;
+use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
-use chrono::Utc;
 
 fn row_to_app_rule(row: &rusqlite::Row) -> rusqlite::Result<AppRule> {
     Ok(AppRule {
@@ -39,7 +39,8 @@ pub fn rules_get_all(state: State<AppState>) -> Result<AllRules, String> {
     let mut stmt = db.prepare(
         "SELECT id, matcher_type, matcher_value, label, category, points_per_minute, enabled, created_at FROM app_rules ORDER BY category, label"
     ).map_err(|e| e.to_string())?;
-    let app_rules = stmt.query_map([], row_to_app_rule)
+    let app_rules = stmt
+        .query_map([], row_to_app_rule)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
@@ -47,19 +48,29 @@ pub fn rules_get_all(state: State<AppState>) -> Result<AllRules, String> {
     let mut stmt2 = db.prepare(
         "SELECT id, domain, label, category, grace_seconds, penalty_per_minute_session, penalty_per_minute_ambient, reward_break_supported, enabled, created_at FROM site_rules ORDER BY category, domain"
     ).map_err(|e| e.to_string())?;
-    let site_rules = stmt2.query_map([], row_to_site_rule)
+    let site_rules = stmt2
+        .query_map([], row_to_site_rule)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
 
-    Ok(AllRules { app_rules, site_rules })
+    Ok(AllRules {
+        app_rules,
+        site_rules,
+    })
 }
 
 #[tauri::command]
-pub fn rules_upsert_app_rule(state: State<AppState>, input: UpsertAppRuleInput) -> Result<AppRule, String> {
+pub fn rules_upsert_app_rule(
+    state: State<AppState>,
+    input: UpsertAppRuleInput,
+) -> Result<AppRule, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
-    let id = input.id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let enabled = input.enabled.unwrap_or(true) as i32;
 
     db.execute(
@@ -78,10 +89,16 @@ pub fn rules_upsert_app_rule(state: State<AppState>, input: UpsertAppRuleInput) 
 }
 
 #[tauri::command]
-pub fn rules_upsert_site_rule(state: State<AppState>, input: UpsertSiteRuleInput) -> Result<SiteRule, String> {
+pub fn rules_upsert_site_rule(
+    state: State<AppState>,
+    input: UpsertSiteRuleInput,
+) -> Result<SiteRule, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
-    let id = input.id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+    let id = input
+        .id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let grace = input.grace_seconds.unwrap_or(300);
     let penalty_session = input.penalty_per_minute_session.unwrap_or(3);
     let penalty_ambient = input.penalty_per_minute_ambient.unwrap_or(1);

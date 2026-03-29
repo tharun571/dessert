@@ -6,6 +6,7 @@ import {
   taskListForDate,
   taskCreate,
   taskMarkDone,
+  taskUpdate,
   sessionStart,
   sessionStop,
   sessionPause,
@@ -36,10 +37,15 @@ import {
   playCelebrate,
 } from "../../lib/sounds";
 import SessionEndOverlay from "./SessionEndOverlay";
+import QuestReflectionModal, {
+  buildQuestReflectionNotes,
+  QuestReflectionAnswers,
+} from "../../components/QuestReflectionModal";
 
 type Page =
   | "home"
   | "tasks"
+  | "habits"
   | "rewards"
   | "inventory"
   | "timeline"
@@ -62,6 +68,25 @@ function formatDuration(startedAt: string, pausedMs: number): string {
   if (h > 0)
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatFromMs(totalMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function elapsedMsForSession(session: Session, nowMs = Date.now()): number {
+  const startMs = new Date(session.started_at).getTime();
+  const currentPauseMs =
+    session.state === "paused" && session.paused_at
+      ? Math.max(0, nowMs - new Date(session.paused_at).getTime())
+      : 0;
+  return Math.max(0, nowMs - startMs - session.paused_ms - currentPauseMs);
 }
 
 export default function HomePage({ onNavigate: _onNavigate }: Props) {
@@ -88,6 +113,8 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
   const [questMinutes, setQuestMinutes] = useState("");
   const [questMainQuest, setQuestMainQuest] = useState(false);
   const [addingQuest, setAddingQuest] = useState(false);
+  const [reflectionTask, setReflectionTask] = useState<Task | null>(null);
+  const [reflectionSubmitting, setReflectionSubmitting] = useState(false);
 
   const [dismissedTomorrow, setDismissedTomorrow] = useState(false);
   const [sunlightAnswered, setSunlightAnswered] = useState(false);
@@ -96,6 +123,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
   const [endStats, setEndStats] = useState<SessionEndStats | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoStoppingSessionIdRef = useRef<string | null>(null);
 
   const today = todayDate();
   const tomorrow = tomorrowDate();
@@ -125,6 +153,28 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
     return () => clearInterval(interval);
   }, [refresh]);
 
+  const autoStopSession = useCallback(
+    async (sessionId: string) => {
+      if (autoStoppingSessionIdRef.current === sessionId) return;
+      autoStoppingSessionIdRef.current = sessionId;
+      try {
+        const ended = await sessionStop(sessionId);
+        const stats = await sessionEndStats(sessionId);
+        playCelebrate();
+        setEndedSession(ended);
+        setEndStats(stats);
+        setSession(null);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+        playError();
+      } finally {
+        autoStoppingSessionIdRef.current = null;
+      }
+    },
+    [refresh],
+  );
+
   // Live timer
   useEffect(() => {
     if (intervalRef.current) {
@@ -137,22 +187,44 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
       return;
     }
 
+    const plannedMs =
+      session.planned_minutes && session.planned_minutes > 0
+        ? session.planned_minutes * 60_000
+        : null;
+
     if (session.state === "active") {
-      const { started_at, paused_ms } = session;
-      // Tick every second, subtracting accumulated paused time
-      intervalRef.current = setInterval(
-        () => setTimer(formatDuration(started_at, paused_ms)),
-        1000,
-      );
-      setTimer(formatDuration(started_at, paused_ms));
+      const updateActive = () => {
+        const elapsedMs = elapsedMsForSession(session);
+        if (plannedMs !== null) {
+          const remainingMs = Math.max(0, plannedMs - elapsedMs);
+          setTimer(formatFromMs(remainingMs));
+          if (remainingMs <= 0) {
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+            void autoStopSession(session.id);
+          }
+        } else {
+          setTimer(formatDuration(session.started_at, session.paused_ms));
+        }
+      };
+      intervalRef.current = setInterval(updateActive, 1000);
+      updateActive();
     } else {
-      // Paused: freeze timer at the moment of pause (paused_at is set, add no current-pause time)
-      const currentPauseMs = session.paused_at
-        ? Date.now() - new Date(session.paused_at).getTime()
-        : 0;
-      setTimer(
-        formatDuration(session.started_at, session.paused_ms + currentPauseMs),
-      );
+      const elapsedMs = elapsedMsForSession(session);
+      if (plannedMs !== null) {
+        const remainingMs = Math.max(0, plannedMs - elapsedMs);
+        setTimer(formatFromMs(remainingMs));
+      } else {
+        // Paused without planned duration: freeze elapsed at pause time.
+        const currentPauseMs = session.paused_at
+          ? Date.now() - new Date(session.paused_at).getTime()
+          : 0;
+        setTimer(
+          formatDuration(session.started_at, session.paused_ms + currentPauseMs),
+        );
+      }
     }
 
     return () => {
@@ -162,10 +234,13 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
       }
     };
   }, [
+    autoStopSession,
+    session?.id,
     session?.state,
     session?.started_at,
     session?.paused_ms,
     session?.paused_at,
+    session?.planned_minutes,
   ]);
 
   const run = async (fn: () => Promise<void>) => {
@@ -243,12 +318,34 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
       }
     });
 
-  const handleMarkDone = (task_id: string) =>
-    run(async () => {
+  const handleMarkDone = (task: Task) => {
+    playClick();
+    setReflectionTask(task);
+  };
+
+  const handleReflectionSubmit = async (answers: QuestReflectionAnswers) => {
+    if (!reflectionTask) return;
+    setError("");
+    setActionLoading(true);
+    setReflectionSubmitting(true);
+    try {
+      await taskMarkDone(reflectionTask.id);
+      await taskUpdate({
+        id: reflectionTask.id,
+        notes: buildQuestReflectionNotes(reflectionTask.notes, answers),
+      });
       playComplete();
-      await taskMarkDone(task_id);
+      setReflectionTask(null);
       await refresh();
-    });
+    } catch (e) {
+      setError(String(e));
+      playError();
+      throw e;
+    } finally {
+      setActionLoading(false);
+      setReflectionSubmitting(false);
+    }
+  };
 
   if (loading)
     return (
@@ -268,6 +365,17 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
+      {reflectionTask && (
+        <QuestReflectionModal
+          taskTitle={reflectionTask.title}
+          submitting={reflectionSubmitting}
+          onCancel={() => {
+            if (!reflectionSubmitting) setReflectionTask(null);
+          }}
+          onSubmit={handleReflectionSubmit}
+        />
+      )}
+
       {endedSession && endStats && (
         <SessionEndOverlay
           session={endedSession}
@@ -296,12 +404,27 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
               <p className="text-zinc-500 text-xs uppercase tracking-widest">
                 all-time
               </p>
-              <p
-                className={`text-2xl font-bold tabular-nums ${overall.total >= 0 ? "text-gradient-score-pos" : "text-gradient-score-neg"}`}
-              >
-                {overall.total >= 0 ? "+" : ""}
-                {overall.total}
-              </p>
+              <div className="flex items-end gap-4 mt-1">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                    total points earned
+                  </p>
+                  <p className="text-2xl font-bold tabular-nums text-emerald-400">
+                    +{overall.earned}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                    available points
+                  </p>
+                  <p
+                    className={`text-2xl font-bold tabular-nums ${overall.total >= 0 ? "text-gradient-score-pos" : "text-gradient-score-neg"}`}
+                  >
+                    {overall.total >= 0 ? "+" : ""}
+                    {overall.total}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -313,7 +436,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
         </div>
         {score && (
           <div className="flex gap-4 mt-2 text-sm">
-            <span className="text-emerald-400">+{score.earned} earned</span>
+            <span className="text-emerald-400">+{score.earned} points earned</span>
             <span className="text-red-400">−{score.lost} lost</span>
             <span className="text-violet-400">−{score.spent} spent</span>
           </div>
@@ -353,7 +476,11 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
               <p className="text-5xl font-mono font-bold text-gradient-orange tabular-nums">
                 {timer}
               </p>
-              <p className="text-xs text-zinc-600 mt-0.5">elapsed</p>
+              <p className="text-xs text-zinc-600 mt-0.5">
+                {session.planned_minutes && session.planned_minutes > 0
+                  ? "remaining"
+                  : "elapsed"}
+              </p>
             </div>
           </div>
 
@@ -640,7 +767,7 @@ export default function HomePage({ onNavigate: _onNavigate }: Props) {
             {plannedTasks.map((task) => (
               <div key={task.id} className="flex items-center gap-3">
                 <button
-                  onClick={() => handleMarkDone(task.id)}
+                  onClick={() => handleMarkDone(task)}
                   disabled={actionLoading}
                   className="w-5 h-5 rounded border border-zinc-600 hover:border-emerald-400 hover:bg-emerald-500/10 flex items-center justify-center shrink-0 transition-all disabled:opacity-50"
                 />

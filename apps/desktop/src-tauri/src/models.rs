@@ -25,6 +25,12 @@ pub struct DayPlanningStatus {
     pub walk_at: Option<String>,
     pub no_outside_food_done: bool,
     pub no_outside_food_at: Option<String>,
+    pub cold_shower_done: bool,
+    pub cold_shower_at: Option<String>,
+    pub meditation_done: bool,
+    pub meditation_at: Option<String>,
+    pub singing_practice_done: bool,
+    pub singing_practice_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +166,8 @@ pub struct AnalyticsDayPoint {
     pub work_ms: i64,
     pub sessions_started: i32,
     pub points_earned: i32,
+    pub points_spent: i32,
+    pub quests_completed: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +176,7 @@ pub struct AnalyticsTodaySummary {
     pub idle_ms: i64,
     pub sessions_started: i32,
     pub points_earned: i32,
+    pub quests_completed: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

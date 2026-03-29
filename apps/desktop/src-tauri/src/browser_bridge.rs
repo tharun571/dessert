@@ -8,14 +8,13 @@
 ///   - After that → penalty per full minute (-3 in session, -1 ambient)
 ///   - Visit resets if away from site for 90 seconds
 ///   - Penalty suppressed if a bought break effect is active
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use chrono::Utc;
 use uuid::Uuid;
 
 // ── Types from the extension ──────────────────────────────────────────────────
@@ -205,7 +204,14 @@ fn process_sample(
         "SELECT category, grace_seconds, penalty_per_minute_session, penalty_per_minute_ambient
          FROM site_rules WHERE enabled=1 AND lower(domain)=lower(?1) LIMIT 1",
         rusqlite::params![domain],
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i32>(1)?, r.get::<_, i32>(2)?, r.get::<_, i32>(3)?)),
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i32>(1)?,
+                r.get::<_, i32>(2)?,
+                r.get::<_, i32>(3)?,
+            ))
+        },
     );
 
     let (category, grace_secs, penalty_session, penalty_ambient) = match rule {
@@ -224,7 +230,9 @@ fn process_sample(
              WHERE scope=?1 AND consumed=0 AND datetime(ends_at) > datetime('now')",
             rusqlite::params![scope],
             |r| r.get::<_, i32>(0),
-        ).map(|n| n > 0).unwrap_or(false)
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
     });
 
     if suppressed {
@@ -233,7 +241,8 @@ fn process_sample(
 
     // Update visit state
     let mut bridge_state = bridge.lock().unwrap();
-    let visit = bridge_state.visits
+    let visit = bridge_state
+        .visits
         .entry(domain.to_string())
         .or_insert_with(SiteVisit::new);
 
@@ -274,11 +283,13 @@ fn process_sample(
     // Store raw event
     let raw_id = Uuid::new_v4().to_string();
     let payload = serde_json::to_string(sample).unwrap_or_default();
-    let active_session_id: Option<String> = conn.query_row(
-        "SELECT id FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
-        [],
-        |r| r.get(0),
-    ).ok();
+    let active_session_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM sessions WHERE state='active' ORDER BY started_at DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
 
     let _ = conn.execute(
         "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)

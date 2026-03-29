@@ -19,6 +19,7 @@ const REASON_META: Record<string, { emoji: string; color: string; border: string
   session_combo_60: { emoji: '🔥', color: 'text-orange-400', border: 'border-orange-500/40' },
   session_combo_90: { emoji: '🔥', color: 'text-orange-500', border: 'border-orange-500/50' },
   session_combo_120: { emoji: '🏆', color: 'text-amber-400', border: 'border-amber-500/50' },
+  session_combo_180: { emoji: '👑', color: 'text-amber-300', border: 'border-amber-400/60' },
   task_completed: { emoji: '📋', color: 'text-emerald-400', border: 'border-emerald-500/25' },
   main_quest_completed: { emoji: '⭐', color: 'text-amber-400', border: 'border-amber-500/40' },
   clean_session_bonus: { emoji: '🏆', color: 'text-amber-400', border: 'border-amber-500/40' },
@@ -31,6 +32,9 @@ const REASON_META: Record<string, { emoji: string; color: string; border: string
   book: { emoji: '📚', color: 'text-blue-400', border: 'border-blue-500/30' },
   walk: { emoji: '🚶', color: 'text-sky-400', border: 'border-sky-500/30' },
   no_outside_food: { emoji: '🥗', color: 'text-lime-400', border: 'border-lime-500/30' },
+  cold_shower: { emoji: '🚿', color: 'text-cyan-400', border: 'border-cyan-500/30' },
+  meditation: { emoji: '🧘', color: 'text-fuchsia-400', border: 'border-fuchsia-500/30' },
+  singing_practice: { emoji: '🎤', color: 'text-rose-400', border: 'border-rose-500/30' },
   task_reopened: { emoji: '↩️', color: 'text-zinc-400', border: 'border-zinc-500/30' },
 };
 

@@ -27,9 +27,12 @@ dessert/
     postcss.config.js
     src/
       main.tsx                     — react entry point
-      App.tsx                      — root: sidebar nav (6 items) + page router
+      App.tsx                      — root: sidebar nav (8 items) + page router
       App.css                      — minimal resets
       index.css                    — tailwind + custom utilities + confettiFall keyframe
+      components/
+        QuestReflectionModal.tsx   — mandatory 3-question reflection modal before quest completion;
+                                     appends timestamped reflection to task notes
       lib/
         api.ts                     — ALL tauri invoke() wrappers (source of truth for IPC)
         types.ts                   — ALL typescript interfaces matching rust structs
@@ -37,15 +40,22 @@ dessert/
       features/
         home/
           HomePage.tsx             — merged dashboard+session: score banner, live timer,
+                                     planned-duration countdown + auto-stop support,
                                      planning gate, sunlight/gym prompts, tracker status,
-                                     quest checklist
+                                     quest checklist, today/all-time score cards
           SessionEndOverlay.tsx    — confetti overlay shown on session stop (records + summary)
-        tasks/TasksPage.tsx        — quest management: today/tomorrow tabs, habits section,
-                                     add/done/reopen/delete quests, carried-over task badge
+        tasks/TasksPage.tsx        — quest management: today/tomorrow tabs,
+                                     add/done/reopen/delete quests, carried-over task badge,
+                                     reflection modal before marking done
+        habits/HabitsPage.tsx      — dedicated daily habits page (toggle log/unlog)
         rewards/RewardsPage.tsx    — "desserts" shop: buy rewards, shows balance, greys out
                                      unaffordable items, inline edit/delete
         inventory/InventoryPage.tsx — inventory: available items (use button) + used items history
-        timeline/TimelinePage.tsx  — today/overall tabs: score stats + event feed with reason_code colors
+                                      grouped by consumed date
+        timeline/TimelinePage.tsx  — today/overall tabs: score stats + event feed + full-width
+                                     24h activity line (focus/idle segments + event dots)
+        analytics/AnalyticsPage.tsx — last 7 days day-wise trend cards/charts with horizontal
+                                      dates (work/sessions/points/quests/net points)
         settings/SettingsPage.tsx  — app/site rules viewer + scoring reference table
 
     src-tauri/
@@ -53,7 +63,7 @@ dessert/
       Cargo.toml                   — rust dependencies
       src/
         main.rs                    — binary entry (just calls lib::run())
-        lib.rs                     — AppState struct, Tauri builder, all command registrations
+        lib.rs                     — AppState struct, Tauri builder, command registrations, macOS menu-bar timer
         db.rs                      — sqlite open + WAL mode + full schema migration + ALTER TABLE migrations
         models.rs                  — all rust structs (Session, Task, Reward, SessionEndStats, DayPlanningStatus, ...)
         seeds.rs                   — default rewards, app_rules, site_rules (runs once on first launch)
@@ -61,10 +71,11 @@ dessert/
         browser_bridge.rs          — HTTP server on :43137 receiving extension scroll events
         commands/
           mod.rs                   — declares all command submodules
-          sessions.rs              — session CRUD + day_planning_status + habit logging (sunlight/gym/book/walk/no_outside_food) + unlog_habit + session_end_stats
+          sessions.rs              — session CRUD + day_planning_status + habit logging (sunlight/gym/book/walk/no_outside_food/cold_shower/meditation/singing_practice) + unlog_habit + session_end_stats
           tasks.rs                 — task CRUD (create/update/mark_done/reopen/delete/list)
           rewards.rs               — reward CRUD + purchase + inventory consume
           scoring.rs               — score_get_today, score_get_overall, timeline_get_for_day
+          analytics.rs             — analytics_get_dashboard (daywise metrics + today activity)
           rules.rs                 — rules_get_all, rules_upsert_app_rule, rules_upsert_site_rule
           tracker.rs               — tracker_get_status (reads TrackerState)
 
@@ -131,7 +142,7 @@ pub fn session_pause(state: State<AppState>, session_id: String) -> Result<Sessi
 
 ## database schema (sqlite, local only)
 
-DB file lives at the Tauri app data dir (`~/Library/Application Support/dessert/dessert.sqlite`).
+DB file lives at the Tauri app data dir (`~/Library/Application Support/com.dessert.app/dessert.sqlite`).
 All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE ... ADD COLUMN` statements run before `CREATE TABLE IF NOT EXISTS` — they are wrapped in `let _ = conn.execute_batch(...)` to silently ignore "duplicate column" errors on re-run.
 
 ### tables
@@ -144,7 +155,9 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 - `paused_ms INTEGER DEFAULT 0` — total accumulated milliseconds spent paused
 - `paused_at TEXT?` — timestamp of when the current pause started (NULL when active/ended)
 - only one session can be `active` at a time — `session_start` auto-ends any existing active session
-- **timer formula**: `(ended_at_or_now - started_at) - paused_ms` = actual work time
+- **elapsed work formula**: `(ended_at_or_now - started_at) - paused_ms` = actual work time
+- `session_stop` (including stop-from-paused) folds current pause segment into `paused_ms` before ending
+- `planned_minutes` is optional; when set, UI/menu-bar shows a countdown and auto-stops at zero
 
 **tasks**
 - `id TEXT PK`, `title TEXT`, `planned_for TEXT` (ISO date "2026-03-22"), `estimated_minutes?`
@@ -153,6 +166,7 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 - **carryover**: `task_list_for_date` returns tasks where `planned_for = date OR (planned_for < date AND status = 'planned')` — uncompleted tasks from prior days show up automatically with a "↩ carried over" badge
 - **idempotency**: `task_mark_done` checks current status before awarding points — re-completing a done task does NOT award points again
 - **reopen deducts points**: `task_reopen` inserts a negative `task_reopened` score event to reverse the completion bonus
+- **quest reflection capture**: quest completion UI collects 3 reflection answers and appends them into `tasks.notes` with timestamp
 
 **rewards**
 - `id TEXT PK`, `name TEXT UNIQUE`, `cost INTEGER`, `duration_minutes?`
@@ -198,11 +212,15 @@ All migrations run in `db.rs::migrate()`. New columns use explicit `ALTER TABLE 
 | `session_combo_60` | +10 | tracker: session reaches 60 min of active work |
 | `session_combo_90` | +15 | tracker: session reaches 90 min of active work |
 | `session_combo_120` | +20 | tracker: session reaches 2 hrs of active work |
+| `session_combo_180` | +30 | tracker: session reaches 3 hrs of active work |
 | `sunlight` | +10 | log_sunlight (morning check-in, once per day, toggleable) |
 | `gym` | +10 | log_gym (once per day, toggleable) |
 | `book` | +10 | log_book (once per day, toggleable) |
 | `walk` | +10 | log_walk (once per day, toggleable) |
 | `no_outside_food` | +10 | log_no_outside_food (once per day, toggleable) |
+| `cold_shower` | +50 | log_cold_shower (once per day, toggleable) |
+| `meditation` | +50 | log_meditation (once per day, toggleable) |
+| `singing_practice` | +50 | log_singing_practice (once per day, toggleable) |
 | `task_completed` | +15 | task_mark_done (normal task) |
 | `main_quest_completed` | +25 | task_mark_done when is_main_quest=1 |
 | `task_reopened` | −15 or −25 | task_reopen — reverses completion bonus |
@@ -214,7 +232,7 @@ to add a new score event anywhere: INSERT into `score_events` then UPDATE `sessi
 
 combo milestone reason codes (`session_combo_*`) are idempotent — checked with `SELECT COUNT(*) FROM score_events WHERE session_id=? AND reason_code=?` before inserting.
 
-habit reason codes (`sunlight`, `gym`, `book`, `walk`, `no_outside_food`) are toggleable — `unlog_habit(reason_code, local_date)` deletes the positive score event for that habit on that date.
+habit reason codes (`sunlight`, `gym`, `book`, `walk`, `no_outside_food`, `cold_shower`, `meditation`, `singing_practice`) are toggleable — `unlog_habit(reason_code, local_date)` deletes the positive score event for that habit on that date.
 
 ---
 
@@ -239,6 +257,7 @@ Background thread, 60s tick (5s startup delay). No special permissions needed.
 - **`get_frontmost_app()`** — two-step: `lsappinfo front` returns the ASN (e.g. `ASN:0x0-0x10010:`), then `lsappinfo info <ASN>` returns full details including `name` and `bundleID`. This is required on macOS 15+ where `lsappinfo front` no longer inlines app details.
 - **`get_idle_seconds()`** — calls CoreGraphics `CGEventSourceSecondsSinceLastEventType` via extern C
 - AFK threshold: 600s of idle → stop scoring, mark idle
+- when idle and a session is live, tracker auto-pauses that active session
 - Scoring in active session: −3/min for negative apps
 - Scoring ambient (no session): −1/min for negative apps
 
@@ -247,6 +266,7 @@ Background thread, 60s tick (5s startup delay). No special permissions needed.
 - 60 min → `session_combo_60` +10
 - 90 min → `session_combo_90` +15
 - 120 min → `session_combo_120` +20
+- 180 min → `session_combo_180` +30
 
 elapsed calculation: `((now - started_at).num_milliseconds() - paused_ms) / 60_000`
 
@@ -269,6 +289,30 @@ Binds `127.0.0.1:43137`. Receives POST batches from the Arc/Chrome extension.
 
 ---
 
+## analytics + timeline activity
+
+`analytics_get_dashboard(local_date, days)` returns:
+- `daywise[]` (zero-filled contiguous days): `work_ms`, `sessions_started`, `points_earned`, `points_spent`, `quests_completed`
+- `today_summary`: `work_ms`, `idle_ms`, `sessions_started`, `points_earned`, `quests_completed`
+- `today_activity`: `segments[]` (`focus`/`idle`) + `dots[]` (dessert buy/use, habits, penalties, milestones, tasks, other)
+
+`TimelinePage.tsx` uses this payload for the 24h activity line (placed between top number cards and the event feed).
+`AnalyticsPage.tsx` renders separate day-wise charts with horizontal date labels and includes net points graph (`points_earned - points_spent`).
+
+---
+
+## macOS menu-bar timer
+
+Implemented in `src-tauri/src/lib.rs` (macOS-gated):
+- creates a tray/menu-bar item with a title that updates every second
+- displays `00:00` with no session
+- displays elapsed timer for unplanned active sessions
+- displays remaining timer for planned sessions (and `⏸` when paused)
+- auto-ends active planned sessions when remaining reaches zero
+- tray click restores/focuses the main window, tray menu includes `Quit`
+
+---
+
 ## day_planning_status — the daily gate
 
 `day_planning_status(local_date, local_tomorrow_date, hour)` is called on every 5s refresh.
@@ -278,7 +322,7 @@ Returns `DayPlanningStatus`:
 - `ask_sunlight`: true if `hour < 12` AND zero sessions today AND `sunlight` not in score_events today
 - `ask_gym`: true if `hour >= 18` AND zero sessions started at or after 6pm today AND `gym` not logged today
 - `suggest_tomorrow`: true if `hour >= 17` AND zero tasks for tomorrow
-- `sunlight_done`, `gym_done`, `book_done`, `walk_done`, `no_outside_food_done`: boolean habit completion state for today
+- `sunlight_done`, `gym_done`, `book_done`, `walk_done`, `no_outside_food_done`, `cold_shower_done`, `meditation_done`, `singing_practice_done`: boolean habit completion state for today
 - `*_at` fields: RFC3339 timestamp of when each habit was logged (null if not done)
 
 **session_start guard**: if task count (today's tasks + carried-over uncompleted tasks) is zero AND no sessions today, `session_start` returns an Err. Carried-over tasks bypass the planning gate.
@@ -306,7 +350,7 @@ Uncompleted tasks from prior days appear in today's list with a "↩ carried ove
 
 ## session end celebration
 
-When `handleStop` is called in `HomePage.tsx`:
+When session ends from manual stop or planned-duration countdown auto-stop in `HomePage.tsx`:
 1. `sessionStop(id)` — marks session ended, returns full Session
 2. `sessionEndStats(id)` — checks if this session is the longest today / this week / ever (excluding paused time)
 3. `playCelebrate()` — 5-tone rising fanfare via Web Audio
@@ -320,11 +364,11 @@ When `handleStop` is called in `HomePage.tsx`:
 ## frontend conventions
 
 ### routing
-`App.tsx` holds a `page` state string. no react-router. nav items: `home`, `tasks`, `desserts` (rewards), `inventory`, `timeline`, `settings`. home page is the merged dashboard+session page. sidebar shows tooltips on hover via `group`/`group-hover` Tailwind pattern.
+`App.tsx` holds a `page` state string. no react-router. nav items: `home`, `tasks`, `habits`, `desserts` (rewards), `inventory`, `timeline`, `analytics`, `settings`. home page is the merged dashboard+session page. sidebar shows tooltips on hover via `group`/`group-hover` Tailwind pattern.
 
 ### data fetching
 - every page fetches its own data in a `refresh` callback wrapped in `useCallback`
-- polled every 5s via `setInterval` in a `useEffect` (10s for timeline)
+- polling is page-specific: home 5s, timeline/analytics/habits 10s, others mostly on-demand refresh
 - all state is local to each page — no global store
 
 ### error handling
@@ -360,8 +404,8 @@ playCelebrate()  // session end (5-tone rising fanfare)
 - primary buttons: inline `style={{ background: 'linear-gradient(135deg, #f97316, #fb923c)' }}`
 - confetti animation: `@keyframes confettiFall` in `index.css`, used by `SessionEndOverlay`
 
-### all text is lowercase
-branding convention: everything in the UI is lowercase ("dessert", "quests", "start session", etc.)
+### text style
+most UI copy is lowercase ("dessert", "quests", "start session"), with intentional sentence-case exceptions (for example quest reflection questions).
 
 ---
 
@@ -369,13 +413,13 @@ branding convention: everything in the UI is lowercase ("dessert", "quests", "st
 
 Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 
-**Default rewards (costs post-10x multiplier):** Nap (50pt), Cold drink (100pt), 1 TV episode (250pt), X break (250pt, suppresses "x" 20min), YouTube break (250pt, suppresses "youtube" 20min), Ice cream (500pt), Biriyani (500pt), Evening with the boys (750pt), Smoke (1000pt, 2h cooldown)
+**Default rewards:** Nap (50pt), Cold drink (100pt), 1 TV episode (250pt), X break (250pt, suppresses "x" 20min), YouTube break (250pt, suppresses "youtube" 20min), Ice cream (500pt), Biriyani (500pt), Evening with the boys (750pt), Smoke (1000pt, 2h cooldown)
 
-**Default positive apps:** Zed, VS Code, Cursor, Terminal, iTerm2, Warp, Xcode, Notion, Obsidian, Linear, Figma, Slack, Postman
+**Default positive apps:** Zed, VS Code, Cursor, Terminal, iTerm2, Warp, Notion, Obsidian, Linear, MongoDB Compass
 
-**Default neutral apps:** Finder, Preview, Calendar, System Preferences, Mail
+**Default neutral apps:** Finder, Preview, Calendar, Mail, Slack
 
-**Default site rules (negative):** x.com, twitter.com, linkedin.com, youtube.com — all with 300s grace, −3/min session, −1/min ambient
+**Default site rules:** negative = x.com, twitter.com, linkedin.com, youtube.com (300s grace, −3/min session, −1/min ambient); positive = github.com, chat.openai.com, claude.ai.
 
 ---
 
@@ -404,7 +448,7 @@ Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 1. add `log_<habit>` command in `commands/sessions.rs` (idempotent: check score_events before inserting)
 2. add `<habit>_done: bool` and `<habit>_at: Option<String>` to `DayPlanningStatus` in `models.rs` and `types.ts`
 3. register command in `lib.rs`, add API wrapper in `api.ts`
-4. add habit entry to the habits array in `TasksPage.tsx` and any prompt card in `HomePage.tsx`
+4. add habit entry to the habits array in `HabitsPage.tsx` and any prompt card in `HomePage.tsx`
 5. add `reason_code` to `REASON_META` in `TimelinePage.tsx`
 
 ---
@@ -419,6 +463,7 @@ Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 - **the tracker thread sleeps 60s between ticks** — scoring granularity is 1 minute.
 - **browser_bridge BridgeState is not persisted** — in-memory only. grace period resets on app restart.
 - **paused_ms is in milliseconds, i64** — combo milestone elapsed uses `num_milliseconds()`, not `num_minutes()`, to avoid precision loss before subtracting paused_ms.
+- **stop from paused must finalize pause duration** — if you add new stop paths, always fold `(now - paused_at)` into `paused_ms` before setting `state='ended'`.
 - **task_mark_done is idempotent** — reads `status` before awarding points. calling it twice on a done task is safe (no double points).
 - **session_end_stats uses `>=` for record comparison** — a session that ties the record is considered a record. this means the first session of the day is always "longest today".
 - **lsappinfo two-step** — `lsappinfo front` only returns the ASN on macOS 15+. must follow with `lsappinfo info <ASN>` to get name/bundleID. using just `lsappinfo front` output for parsing will silently return nothing.

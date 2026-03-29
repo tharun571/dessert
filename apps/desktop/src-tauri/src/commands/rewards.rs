@@ -1,8 +1,9 @@
-use crate::models::{Reward, InventoryItem, CreateRewardInput, UpdateRewardInput};
+use crate::models::{CreateRewardInput, InventoryItem, Reward, UpdateRewardInput};
 use crate::AppState;
+use chrono::Utc;
+use rusqlite::OptionalExtension;
 use tauri::State;
 use uuid::Uuid;
-use chrono::Utc;
 
 fn row_to_reward(row: &rusqlite::Row) -> rusqlite::Result<Reward> {
     Ok(Reward {
@@ -64,7 +65,8 @@ pub fn reward_list(state: State<AppState>) -> Result<Vec<Reward>, String> {
         "SELECT id, name, cost, duration_minutes, ends_session_on_consume, suppresses_scope, cooldown_minutes, enabled, created_at
          FROM rewards WHERE enabled=1 ORDER BY cost ASC"
     ).map_err(|e| e.to_string())?;
-    let result = stmt.query_map([], row_to_reward)
+    let result = stmt
+        .query_map([], row_to_reward)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());
@@ -78,7 +80,8 @@ pub fn reward_list_all(state: State<AppState>) -> Result<Vec<Reward>, String> {
         "SELECT id, name, cost, duration_minutes, ends_session_on_consume, suppresses_scope, cooldown_minutes, enabled, created_at
          FROM rewards ORDER BY cost ASC"
     ).map_err(|e| e.to_string())?;
-    let result = stmt.query_map([], row_to_reward)
+    let result = stmt
+        .query_map([], row_to_reward)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());
@@ -91,7 +94,11 @@ pub fn reward_create(state: State<AppState>, input: CreateRewardInput) -> Result
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
     let ends_session = input.ends_session_on_consume.unwrap_or(true) as i32;
-    let scope = input.suppresses_scope.as_deref().unwrap_or("none").to_string();
+    let scope = input
+        .suppresses_scope
+        .as_deref()
+        .unwrap_or("none")
+        .to_string();
 
     db.execute(
         "INSERT INTO rewards (id, name, cost, duration_minutes, ends_session_on_consume, suppresses_scope, cooldown_minutes, enabled, created_at)
@@ -107,32 +114,53 @@ pub fn reward_update(state: State<AppState>, input: UpdateRewardInput) -> Result
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     if let Some(name) = &input.name {
-        db.execute("UPDATE rewards SET name=?1 WHERE id=?2", rusqlite::params![name, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET name=?1 WHERE id=?2",
+            rusqlite::params![name, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(cost) = input.cost {
-        db.execute("UPDATE rewards SET cost=?1 WHERE id=?2", rusqlite::params![cost, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET cost=?1 WHERE id=?2",
+            rusqlite::params![cost, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(dm) = input.duration_minutes {
-        db.execute("UPDATE rewards SET duration_minutes=?1 WHERE id=?2", rusqlite::params![dm, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET duration_minutes=?1 WHERE id=?2",
+            rusqlite::params![dm, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(ends) = input.ends_session_on_consume {
-        db.execute("UPDATE rewards SET ends_session_on_consume=?1 WHERE id=?2", rusqlite::params![ends as i32, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET ends_session_on_consume=?1 WHERE id=?2",
+            rusqlite::params![ends as i32, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(scope) = &input.suppresses_scope {
-        db.execute("UPDATE rewards SET suppresses_scope=?1 WHERE id=?2", rusqlite::params![scope, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET suppresses_scope=?1 WHERE id=?2",
+            rusqlite::params![scope, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(cm) = input.cooldown_minutes {
-        db.execute("UPDATE rewards SET cooldown_minutes=?1 WHERE id=?2", rusqlite::params![cm, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET cooldown_minutes=?1 WHERE id=?2",
+            rusqlite::params![cm, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(enabled) = input.enabled {
-        db.execute("UPDATE rewards SET enabled=?1 WHERE id=?2", rusqlite::params![enabled as i32, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE rewards SET enabled=?1 WHERE id=?2",
+            rusqlite::params![enabled as i32, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     get_reward(&db, &input.id)
@@ -141,8 +169,11 @@ pub fn reward_update(state: State<AppState>, input: UpdateRewardInput) -> Result
 #[tauri::command]
 pub fn reward_delete(state: State<AppState>, reward_id: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.execute("UPDATE rewards SET enabled=0 WHERE id=?1", rusqlite::params![reward_id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE rewards SET enabled=0 WHERE id=?1",
+        rusqlite::params![reward_id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -155,11 +186,13 @@ pub fn reward_purchase(
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
-    let (cost, name): (i32, String) = db.query_row(
-        "SELECT cost, name FROM rewards WHERE id=?1 AND enabled=1",
-        rusqlite::params![reward_id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    ).map_err(|e| format!("Reward not found: {}", e))?;
+    let (cost, name): (i32, String) = db
+        .query_row(
+            "SELECT cost, name FROM rewards WHERE id=?1 AND enabled=1",
+            rusqlite::params![reward_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| format!("Reward not found: {}", e))?;
 
     let item_id = Uuid::new_v4().to_string();
     db.execute(
@@ -181,7 +214,8 @@ pub fn reward_purchase(
         db.execute(
             "UPDATE sessions SET score_total = score_total - ?1 WHERE id = ?2",
             rusqlite::params![cost, sid],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     get_inventory_item(&db, &item_id)
@@ -195,7 +229,8 @@ pub fn inventory_list_consumed(state: State<AppState>) -> Result<Vec<InventoryIt
          FROM inventory_items i JOIN rewards r ON r.id=i.reward_id
          WHERE i.status='consumed' ORDER BY i.consumed_at DESC LIMIT 50"
     ).map_err(|e| e.to_string())?;
-    let result = stmt.query_map([], row_to_inventory)
+    let result = stmt
+        .query_map([], row_to_inventory)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());
@@ -210,7 +245,8 @@ pub fn inventory_list_available(state: State<AppState>) -> Result<Vec<InventoryI
          FROM inventory_items i JOIN rewards r ON r.id=i.reward_id
          WHERE i.status='available' ORDER BY i.purchased_at DESC"
     ).map_err(|e| e.to_string())?;
-    let result = stmt.query_map([], row_to_inventory)
+    let result = stmt
+        .query_map([], row_to_inventory)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());
@@ -224,14 +260,22 @@ pub fn inventory_consume(
     consume_session_id: Option<String>,
 ) -> Result<InventoryItem, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let now = Utc::now().to_rfc3339();
+    let now_utc = Utc::now();
+    let now = now_utc.to_rfc3339();
 
-    let (_reward_id, ends_session, suppresses_scope, duration_minutes): (String, i32, Option<String>, Option<i32>) = db.query_row(
-        "SELECT r.id, r.ends_session_on_consume, r.suppresses_scope, r.duration_minutes
+    let (_reward_id, ends_session, suppresses_scope, duration_minutes): (
+        String,
+        i32,
+        Option<String>,
+        Option<i32>,
+    ) = db
+        .query_row(
+            "SELECT r.id, r.ends_session_on_consume, r.suppresses_scope, r.duration_minutes
          FROM inventory_items i JOIN rewards r ON r.id=i.reward_id WHERE i.id=?1",
-        rusqlite::params![item_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    ).map_err(|e| format!("Item not found: {}", e))?;
+            rusqlite::params![item_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(|e| format!("Item not found: {}", e))?;
 
     db.execute(
         "UPDATE inventory_items SET status='consumed', consumed_at=?1, consume_session_id=?2 WHERE id=?3",
@@ -256,10 +300,33 @@ pub fn inventory_consume(
     }
 
     if ends_session != 0 {
-        db.execute(
-            "UPDATE sessions SET state='ended', ended_at=?1 WHERE state IN ('active','paused')",
-            rusqlite::params![now],
-        ).map_err(|e| e.to_string())?;
+        if let Some(session_id) = current_session_id(&db) {
+            let paused_at_str = db
+                .query_row(
+                    "SELECT paused_at FROM sessions WHERE id=?1 AND state='paused'",
+                    rusqlite::params![&session_id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten();
+
+            let mut added_paused_ms = 0_i64;
+            if let Some(paused_at_str) = paused_at_str {
+                let paused_at = chrono::DateTime::parse_from_rfc3339(&paused_at_str)
+                    .map_err(|e| e.to_string())?
+                    .with_timezone(&Utc);
+                added_paused_ms = (now_utc - paused_at).num_milliseconds().max(0);
+            }
+
+            db.execute(
+                "UPDATE sessions
+                 SET state='ended', ended_at=?1, paused_ms = paused_ms + ?2, paused_at = NULL
+                 WHERE id=?3 AND state IN ('active','paused')",
+                rusqlite::params![now, added_paused_ms, session_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
 
     get_inventory_item(&db, &item_id)

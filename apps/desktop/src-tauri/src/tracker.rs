@@ -1,3 +1,5 @@
+use chrono::Utc;
+use rusqlite::Connection;
 /// macOS frontmost-app tracker + idle detection + scoring tick loop
 ///
 /// Polls every 60 seconds:
@@ -5,11 +7,8 @@
 ///   - Detects idle time via CoreGraphics CGEventSource
 ///   - Awards/penalises points based on app_rules and session state
 ///   - Tracks consecutive productive minutes for combo bonus
-
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use rusqlite::Connection;
-use chrono::Utc;
 use uuid::Uuid;
 
 pub struct TrackerState {
@@ -98,7 +97,6 @@ pub fn get_idle_seconds() -> f64 {
 const TICK_SECS: u64 = 60;
 const AFK_THRESHOLD_SECS: f64 = 600.0; // 10 minutes
 
-
 pub fn start(db: Arc<Mutex<Connection>>, tracker: Arc<Mutex<TrackerState>>) {
     std::thread::spawn(move || {
         // Stagger startup so the app UI loads first
@@ -134,7 +132,10 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         t.last_tick = Some(now_str.clone());
     }
 
-    eprintln!("[tracker] tick: app=\"{}\" idle={:.0}s", app_name, idle_secs);
+    eprintln!(
+        "[tracker] tick: app=\"{}\" idle={:.0}s",
+        app_name, idle_secs
+    );
 
     let conn = db.lock().unwrap();
 
@@ -144,7 +145,10 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     ).ok();
-    eprintln!("[tracker] active session: {:?}", session.as_ref().map(|(id, score, _)| (id.as_str(), score)));
+    eprintln!(
+        "[tracker] active session: {:?}",
+        session.as_ref().map(|(id, score, _)| (id.as_str(), score))
+    );
 
     // Emit raw event
     let raw_id = Uuid::new_v4().to_string();
@@ -153,11 +157,13 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
         bundle_id, app_name, idle_secs, is_idle
     );
     let session_id_for_raw = session.as_ref().map(|(id, _, _)| id.as_str());
-    let raw_insert_ok = conn.execute(
-        "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)
+    let raw_insert_ok = conn
+        .execute(
+            "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)
          VALUES (?1, ?2, 'mac_app', 'frontmost_app', ?3, ?4)",
-        rusqlite::params![raw_id, now_str, payload, session_id_for_raw],
-    ).is_ok();
+            rusqlite::params![raw_id, now_str, payload, session_id_for_raw],
+        )
+        .is_ok();
     // Use raw_id as FK only if the insert succeeded; otherwise pass NULL to avoid FK violation
     let related_id: Option<&str> = if raw_insert_ok { Some(&raw_id) } else { None };
 
@@ -171,50 +177,87 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     }
 
     if is_idle {
+        if let Some((session_id, _, _)) = &session {
+            match conn.execute(
+                "UPDATE sessions
+                 SET state='paused', paused_at=?1
+                 WHERE id=?2 AND state='active'",
+                rusqlite::params![now_str, session_id],
+            ) {
+                Ok(rows) if rows > 0 => {
+                    eprintln!(
+                        "[tracker] auto-paused session {} (idle {:.0}s)",
+                        session_id, idle_secs
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!(
+                        "[tracker] ERROR auto-pausing session {}: {}",
+                        session_id, e
+                    );
+                }
+            }
+        }
         eprintln!("[tracker] idle — skipping scoring");
         return;
     }
 
     // Look up app rule
-    let rule: Option<(String, i32)> = conn.query_row(
-        "SELECT category, points_per_minute FROM app_rules
+    let rule: Option<(String, i32)> = conn
+        .query_row(
+            "SELECT category, points_per_minute FROM app_rules
          WHERE enabled=1 AND (
            (matcher_type='bundle_id' AND lower(matcher_value)=lower(?1)) OR
            (matcher_type='app_name'  AND lower(matcher_value)=lower(?2))
          )
          ORDER BY matcher_type='bundle_id' DESC LIMIT 1",
-        rusqlite::params![bundle_id, app_name],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    ).ok();
+            rusqlite::params![bundle_id, app_name],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
 
     // Award time-based combo bonuses (once per session per milestone)
     if let Some((ref session_id, _, ref started_at)) = session {
         let start_time = chrono::DateTime::parse_from_rfc3339(started_at)
             .map(|t| t.with_timezone(&Utc))
             .unwrap_or(now);
-        let paused_ms: i64 = conn.query_row(
-            "SELECT paused_ms FROM sessions WHERE id=?1",
-            rusqlite::params![session_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let paused_ms: i64 = conn
+            .query_row(
+                "SELECT paused_ms FROM sessions WHERE id=?1",
+                rusqlite::params![session_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         let elapsed_mins = (((now - start_time).num_milliseconds() - paused_ms) / 60_000).max(0);
 
         let milestones: &[(i64, i32, &str, &str)] = &[
-            (30,  5,  "session_combo_30",  "30 min focus streak! +5"),
-            (60,  10, "session_combo_60",  "60 min deep work combo! 🔥 +10"),
-            (90,  15, "session_combo_90",  "90 min beast mode! 🔥 +15"),
+            (30, 5, "session_combo_30", "30 min focus streak! +5"),
+            (60, 10, "session_combo_60", "60 min deep work combo! 🔥 +10"),
+            (90, 15, "session_combo_90", "90 min beast mode! 🔥 +15"),
             (120, 20, "session_combo_120", "2 hour legend run! 🔥 +20"),
+            (180, 30, "session_combo_180", "3 hour ultra run! 🏆 +30"),
         ];
 
         for &(threshold, delta, reason, explanation) in milestones {
             if elapsed_mins >= threshold {
-                let already: i32 = conn.query_row(
-                    "SELECT COUNT(*) FROM score_events WHERE session_id=?1 AND reason_code=?2",
-                    rusqlite::params![session_id, reason],
-                    |r| r.get(0),
-                ).unwrap_or(1);
+                let already: i32 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM score_events WHERE session_id=?1 AND reason_code=?2",
+                        rusqlite::params![session_id, reason],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(1);
                 if already == 0 {
-                    emit_score(&conn, &now_str, Some(session_id), delta, reason, explanation, related_id);
+                    emit_score(
+                        &conn,
+                        &now_str,
+                        Some(session_id),
+                        delta,
+                        reason,
+                        explanation,
+                        related_id,
+                    );
                     update_session_score(&conn, session_id, delta);
                 }
             }
@@ -229,18 +272,28 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     match (category, &session) {
         ("negative", Some((session_id, _, _))) => {
             // In-session penalty for negative apps (sites handled by browser extension)
-            emit_score(&conn, &now_str, Some(session_id), -3,
+            emit_score(
+                &conn,
+                &now_str,
+                Some(session_id),
+                -3,
                 "red_site_penalty",
                 &format!("{} during session (-3)", app_name),
-                related_id);
+                related_id,
+            );
             update_session_score(&conn, session_id, -3);
         }
         ("negative", None) => {
             // Ambient penalty (outside session)
-            emit_score(&conn, &now_str, None, -1,
+            emit_score(
+                &conn,
+                &now_str,
+                None,
+                -1,
                 "ambient_red_site_penalty",
                 &format!("{} outside session (-1)", app_name),
-                related_id);
+                related_id,
+            );
         }
         _ => {}
     }
@@ -272,6 +325,9 @@ fn update_session_score(conn: &Connection, session_id: &str, delta: i32) {
     ) {
         eprintln!("[tracker] ERROR updating session score: {}", e);
     } else {
-        eprintln!("[tracker] session_score += {} for session {}", delta, session_id);
+        eprintln!(
+            "[tracker] session_score += {} for session {}",
+            delta, session_id
+        );
     }
 }

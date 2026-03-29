@@ -1,8 +1,8 @@
-use crate::models::{Task, CreateTaskInput, UpdateTaskInput};
+use crate::models::{CreateTaskInput, Task, UpdateTaskInput};
 use crate::AppState;
+use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
-use chrono::Utc;
 
 fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -57,24 +57,39 @@ pub fn task_update(state: State<AppState>, input: UpdateTaskInput) -> Result<Tas
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     if let Some(title) = &input.title {
-        db.execute("UPDATE tasks SET title=?1 WHERE id=?2", rusqlite::params![title, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE tasks SET title=?1 WHERE id=?2",
+            rusqlite::params![title, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(em) = input.estimated_minutes {
-        db.execute("UPDATE tasks SET estimated_minutes=?1 WHERE id=?2", rusqlite::params![em, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE tasks SET estimated_minutes=?1 WHERE id=?2",
+            rusqlite::params![em, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(mq) = input.is_main_quest {
-        db.execute("UPDATE tasks SET is_main_quest=?1 WHERE id=?2", rusqlite::params![mq as i32, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE tasks SET is_main_quest=?1 WHERE id=?2",
+            rusqlite::params![mq as i32, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(notes) = &input.notes {
-        db.execute("UPDATE tasks SET notes=?1 WHERE id=?2", rusqlite::params![notes, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE tasks SET notes=?1 WHERE id=?2",
+            rusqlite::params![notes, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
     if let Some(pf) = &input.planned_for {
-        db.execute("UPDATE tasks SET planned_for=?1 WHERE id=?2", rusqlite::params![pf, input.id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE tasks SET planned_for=?1 WHERE id=?2",
+            rusqlite::params![pf, input.id],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     get_task(&db, &input.id)
@@ -85,11 +100,13 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
-    let (is_main_quest, current_status): (i32, String) = db.query_row(
-        "SELECT is_main_quest, status FROM tasks WHERE id=?1",
-        rusqlite::params![task_id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    ).map_err(|e| e.to_string())?;
+    let (is_main_quest, current_status): (i32, String) = db
+        .query_row(
+            "SELECT is_main_quest, status FROM tasks WHERE id=?1",
+            rusqlite::params![task_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
 
     // Idempotent: if already done, don't award points again
     if current_status == "done" {
@@ -99,10 +116,15 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
     db.execute(
         "UPDATE tasks SET status='done', completed_at=?1, completion_source='manual' WHERE id=?2",
         rusqlite::params![now, task_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let (delta, reason_code, explanation): (i32, &str, &str) = if is_main_quest != 0 {
-        (25, "main_quest_completed", "Main Quest completed! Outstanding.")
+        (
+            25,
+            "main_quest_completed",
+            "Main Quest completed! Outstanding.",
+        )
     } else {
         (15, "task_completed", "Task completed — nice work.")
     };
@@ -120,7 +142,8 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
         db.execute(
             "UPDATE sessions SET score_total = score_total + ?1 WHERE id = ?2",
             rusqlite::params![delta, sid],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     get_task(&db, &task_id)
@@ -130,11 +153,13 @@ pub fn task_mark_done(state: State<AppState>, task_id: String) -> Result<Task, S
 pub fn task_reopen(state: State<AppState>, task_id: String) -> Result<Task, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
-    let (is_main_quest, current_status): (i32, String) = db.query_row(
-        "SELECT is_main_quest, status FROM tasks WHERE id=?1",
-        rusqlite::params![task_id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    ).map_err(|e| e.to_string())?;
+    let (is_main_quest, current_status): (i32, String) = db
+        .query_row(
+            "SELECT is_main_quest, status FROM tasks WHERE id=?1",
+            rusqlite::params![task_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
 
     // Only deduct points if actually was done
     if current_status == "done" {
@@ -153,14 +178,16 @@ pub fn task_reopen(state: State<AppState>, task_id: String) -> Result<Task, Stri
             db.execute(
                 "UPDATE sessions SET score_total = score_total + ?1 WHERE id = ?2",
                 rusqlite::params![delta, sid],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
     }
 
     db.execute(
         "UPDATE tasks SET status='planned', completed_at=NULL WHERE id=?1",
         rusqlite::params![task_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     get_task(&db, &task_id)
 }
@@ -183,7 +210,8 @@ pub fn task_list_for_date(state: State<AppState>, date: String) -> Result<Vec<Ta
          WHERE planned_for=?1 OR (planned_for < ?1 AND status='planned')
          ORDER BY is_main_quest DESC, planned_for ASC, created_at ASC"
     ).map_err(|e| e.to_string())?;
-    let result = stmt.query_map(rusqlite::params![date], row_to_task)
+    let result = stmt
+        .query_map(rusqlite::params![date], row_to_task)
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string());

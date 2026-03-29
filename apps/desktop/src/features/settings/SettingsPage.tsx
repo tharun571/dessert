@@ -89,7 +89,11 @@ export default function SettingsPage() {
         <div className="space-y-1.5 text-sm text-zinc-400">
           <div className="flex justify-between"><span>start session</span><span className="text-emerald-400">+5</span></div>
           <div className="flex justify-between"><span>productive app (per min)</span><span className="text-emerald-400">+1</span></div>
-          <div className="flex justify-between"><span>25min combo</span><span className="text-emerald-400">+5</span></div>
+          <div className="flex justify-between"><span>30min combo</span><span className="text-emerald-400">+5</span></div>
+          <div className="flex justify-between"><span>60min combo</span><span className="text-emerald-400">+10</span></div>
+          <div className="flex justify-between"><span>90min combo</span><span className="text-emerald-400">+15</span></div>
+          <div className="flex justify-between"><span>120min combo</span><span className="text-emerald-400">+20</span></div>
+          <div className="flex justify-between"><span>180min combo</span><span className="text-emerald-400">+30</span></div>
           <div className="flex justify-between"><span>complete task</span><span className="text-emerald-400">+15</span></div>
           <div className="flex justify-between"><span>complete main quest</span><span className="text-amber-400">+25</span></div>
           <div className="flex justify-between"><span>clean session bonus</span><span className="text-emerald-400">+10</span></div>

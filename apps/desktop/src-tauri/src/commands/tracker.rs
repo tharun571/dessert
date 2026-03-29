@@ -1,6 +1,6 @@
 use crate::AppState;
-use tauri::State;
 use serde::Serialize;
+use tauri::State;
 
 #[derive(Debug, Serialize)]
 pub struct TrackerStatus {
