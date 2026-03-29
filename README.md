@@ -2,7 +2,7 @@
 
 > turn work into game.
 
-`dessert` is a macOS productivity app that gamifies focus sessions.
+`dessert` is a desktop productivity app for macOS and Windows that gamifies focus sessions.
 
 - earn points for focused work and healthy habits
 - lose points for doomscrolling negative apps/sites
@@ -11,7 +11,8 @@
 ## core features
 
 - **focus sessions**: start/pause/resume/stop, optional planned-duration countdown, combo milestones at 30/60/90/120/180 minutes, and auto-pause when idle for 10+ minutes.
-- **menu bar timer (macOS)**: always-on session timer in the top bar (`00:00` idle, running during active session, `⏸` while paused).
+- **tray timer (macOS)**: always-on menu-bar timer on macOS (`00:00` idle, running during active session, `⏸` while paused).
+- **windows tray**: restore/quit tray icon on Windows; the live text timer remains macOS-only.
 - **tasks + habits**: quests, main quest bonus, mandatory 3-question reflection on quest completion, daily habit logging (including cold shower, meditation, singing practice).
 - **rewards + inventory**: buy rewards, consume later, optional penalty suppression windows.
 - **timeline**: today's score events plus a full-width **24h activity line** with focus/idle segments and event dots.
@@ -27,11 +28,11 @@
 
 | layer | tech |
 |-------|------|
-| shell | [tauri v2](https://tauri.app) (macOS) |
+| shell | [tauri v2](https://tauri.app) |
 | ui | react 19 + typescript + tailwind css |
 | backend | rust + rusqlite (sqlite, bundled) |
-| tracker | `lsappinfo` + CoreGraphics idle detection |
-| browser | MV3 extension (Arc/Chrome) → localhost bridge (`127.0.0.1:43137`) |
+| tracker | platform-native foreground app + idle detection |
+| browser | MV3 extension (Chromium browsers) → localhost bridge (`127.0.0.1:43137`) |
 
 ## run locally
 
@@ -42,9 +43,9 @@ cd apps/desktop
 pnpm tauri dev
 ```
 
-## browser extension setup (Arc/Chrome)
+## browser extension setup (Chromium browsers)
 
-1. Open `chrome://extensions` (or Arc equivalent)
+1. Open `chrome://extensions` (or the extensions page in Edge / Arc where available)
 2. Enable developer mode
 3. Click "Load unpacked" and select `extensions/arc-tracker/`
 4. Browse tracked sites (X/Twitter, LinkedIn, YouTube)

@@ -152,7 +152,7 @@ pub fn analytics_get_dashboard(
         .prepare(
             "SELECT ts, payload_json, session_id
          FROM raw_events
-         WHERE source='mac_app' AND event_type='frontmost_app' AND date(ts)=?1
+         WHERE event_type='frontmost_app' AND date(ts)=?1
          ORDER BY ts ASC",
         )
         .map_err(|e| e.to_string())?;

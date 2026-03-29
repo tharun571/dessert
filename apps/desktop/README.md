@@ -18,6 +18,6 @@ pnpm build    # tsc + vite build
 
 ## key runtime pieces
 
-- **tracker** (`src-tauri/src/tracker.rs`): frontmost macOS app + idle detection tick loop
+- **tracker** (`src-tauri/src/tracker.rs`): platform-specific frontmost app + idle detection tick loop
 - **browser bridge** (`src-tauri/src/browser_bridge.rs`): receives MV3 extension batches on `127.0.0.1:43137`
 - **analytics command** (`src-tauri/src/commands/analytics.rs`): serves day-wise dashboard + today 24h activity payload

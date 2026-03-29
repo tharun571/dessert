@@ -1,5 +1,5 @@
 // dessert tracker — service worker
-// batches samples from content scripts and POSTs to the dessert bridge on 127.0.0.1:43137
+// batches samples from content scripts and POSTs to the desktop bridge on 127.0.0.1:43137
 
 const BRIDGE_URL = 'http://127.0.0.1:43137/events';
 const FLUSH_INTERVAL_MS = 10000; // flush every 10 seconds

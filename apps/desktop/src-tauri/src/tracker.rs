@@ -1,12 +1,20 @@
 use chrono::Utc;
 use rusqlite::Connection;
-/// macOS frontmost-app tracker + idle detection + scoring tick loop
+/// Frontmost-app tracker + idle detection + scoring tick loop
 ///
 /// Polls every 60 seconds:
-///   - Detects frontmost app (bundle_id + name) via lsappinfo
-///   - Detects idle time via CoreGraphics CGEventSource
+///   - Detects frontmost app (bundle_id + name) via platform APIs
+///   - Detects idle time via platform APIs
 ///   - Awards/penalises points based on app_rules and session state
 ///   - Tracks consecutive productive minutes for combo bonus
+#[cfg(target_os = "windows")]
+use std::ffi::{c_void, OsString};
+#[cfg(target_os = "windows")]
+use std::mem::size_of;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStringExt;
+#[cfg(target_os = "windows")]
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use uuid::Uuid;
@@ -35,8 +43,7 @@ impl Default for TrackerState {
 }
 
 /// Get the frontmost application's bundle_id and display name.
-/// Uses lsappinfo (no special permissions required).
-/// macOS: `lsappinfo front` returns the ASN only; `lsappinfo info <ASN>` gives full details.
+#[cfg(target_os = "macos")]
 pub fn get_frontmost_app() -> Option<(String, String)> {
     // Step 1: get the ASN of the frontmost app
     let front = std::process::Command::new("/usr/bin/lsappinfo")
@@ -84,18 +91,123 @@ pub fn get_frontmost_app() -> Option<(String, String)> {
     Some((bundle_id, name))
 }
 
-/// Seconds since last keyboard/mouse activity using CoreGraphics.
-/// kCGEventSourceStateHIDSystemState = 1, kCGAnyInputEventType = 0xFFFFFFFF
+#[cfg(target_os = "windows")]
+type HWND = *mut c_void;
+#[cfg(target_os = "windows")]
+type HANDLE = *mut c_void;
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct LastInputInfo {
+    cb_size: u32,
+    dw_time: u32,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "User32")]
+unsafe extern "system" {
+    fn GetForegroundWindow() -> HWND;
+    fn GetWindowThreadProcessId(h_wnd: HWND, process_id: *mut u32) -> u32;
+    fn GetLastInputInfo(plii: *mut LastInputInfo) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "Kernel32")]
+unsafe extern "system" {
+    fn GetTickCount() -> u32;
+    fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> HANDLE;
+    fn QueryFullProcessImageNameW(
+        process: HANDLE,
+        flags: u32,
+        exe_name: *mut u16,
+        size: *mut u32,
+    ) -> i32;
+    fn CloseHandle(object: HANDLE) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+/// Get the frontmost application's executable path and stem on Windows.
+#[cfg(target_os = "windows")]
+pub fn get_frontmost_app() -> Option<(String, String)> {
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd.is_null() {
+        return None;
+    }
+
+    let mut process_id = 0;
+    let thread_id = unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
+    if thread_id == 0 || process_id == 0 {
+        return None;
+    }
+
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if process.is_null() {
+        return None;
+    }
+
+    let mut buffer = vec![0u16; 1024];
+    let mut size = buffer.len() as u32;
+    let ok = unsafe { QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut size) };
+    let _ = unsafe { CloseHandle(process) };
+    if ok == 0 || size == 0 {
+        return None;
+    }
+
+    buffer.truncate(size as usize);
+    let exe_path = PathBuf::from(OsString::from_wide(&buffer));
+    let app_name = exe_path.file_stem()?.to_string_lossy().trim().to_string();
+    if app_name.is_empty() {
+        return None;
+    }
+
+    Some((exe_path.to_string_lossy().to_string(), app_name))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn get_frontmost_app() -> Option<(String, String)> {
+    None
+}
+
+/// Seconds since last keyboard/mouse activity.
+#[cfg(target_os = "macos")]
 pub fn get_idle_seconds() -> f64 {
     #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         fn CGEventSourceSecondsSinceLastEventType(stateID: i32, eventType: u32) -> f64;
     }
     unsafe { CGEventSourceSecondsSinceLastEventType(1, 0xFFFFFF_FFu32) }
 }
 
+#[cfg(target_os = "windows")]
+pub fn get_idle_seconds() -> f64 {
+    let mut info = LastInputInfo {
+        cb_size: size_of::<LastInputInfo>() as u32,
+        dw_time: 0,
+    };
+    if unsafe { GetLastInputInfo(&mut info) } == 0 {
+        return 0.0;
+    }
+
+    let elapsed_ms = unsafe { GetTickCount() }.wrapping_sub(info.dw_time) as f64;
+    elapsed_ms / 1000.0
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn get_idle_seconds() -> f64 {
+    0.0
+}
+
 const TICK_SECS: u64 = 60;
 const AFK_THRESHOLD_SECS: f64 = 600.0; // 10 minutes
+
+#[cfg(target_os = "macos")]
+const TRACKER_RAW_SOURCE: &str = "mac_app";
+#[cfg(target_os = "windows")]
+const TRACKER_RAW_SOURCE: &str = "system";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const TRACKER_RAW_SOURCE: &str = "system";
 
 pub fn start(db: Arc<Mutex<Connection>>, tracker: Arc<Mutex<TrackerState>>) {
     std::thread::spawn(move || {
@@ -115,7 +227,7 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     let (bundle_id, app_name) = match get_frontmost_app() {
         Some(v) => v,
         None => {
-            eprintln!("[tracker] tick: lsappinfo returned no app — skipping");
+            eprintln!("[tracker] tick: frontmost app lookup returned no app — skipping");
             return;
         }
     };
@@ -160,8 +272,8 @@ fn tick(db: &Arc<Mutex<Connection>>, tracker: &Arc<Mutex<TrackerState>>) {
     let raw_insert_ok = conn
         .execute(
             "INSERT INTO raw_events (id, ts, source, event_type, payload_json, session_id)
-         VALUES (?1, ?2, 'mac_app', 'frontmost_app', ?3, ?4)",
-            rusqlite::params![raw_id, now_str, payload, session_id_for_raw],
+         VALUES (?1, ?2, ?3, 'frontmost_app', ?4, ?5)",
+            rusqlite::params![raw_id, now_str, TRACKER_RAW_SOURCE, payload, session_id_for_raw],
         )
         .is_ok();
     // Use raw_id as FK only if the insert succeeded; otherwise pass NULL to avoid FK violation

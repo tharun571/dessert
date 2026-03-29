@@ -1,6 +1,6 @@
 /// Localhost HTTP bridge on 127.0.0.1:43137
 ///
-/// Receives BrowserActivitySample batches from the Arc extension.
+/// Receives BrowserActivitySample batches from the Chromium browser extension.
 /// Applies grace-period logic and emits score events.
 ///
 /// Grace logic per site:

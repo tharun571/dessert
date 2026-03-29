@@ -19,6 +19,9 @@ pub fn seed_if_empty(conn: &Connection) -> Result<()> {
         seed_site_rules(conn)?;
     }
 
+    #[cfg(target_os = "windows")]
+    ensure_windows_app_rules(conn)?;
+
     Ok(())
 }
 
@@ -177,5 +180,42 @@ fn seed_site_rules(conn: &Connection) -> Result<()> {
             ],
         )?;
     }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_windows_app_rules(conn: &Connection) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let rules: [(&str, &str, &str, &str, i32); 3] = [
+        ("app_name", "WindowsTerminal", "Windows Terminal", "positive", 1),
+        ("app_name", "MongoDBCompass", "MongoDB Compass", "positive", 1),
+        ("app_name", "explorer", "File Explorer", "neutral", 0),
+    ];
+
+    for (matcher_type, matcher_value, label, category, ppm) in rules {
+        let exists: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM app_rules
+             WHERE matcher_type=?1 AND lower(matcher_value)=lower(?2)",
+            rusqlite::params![matcher_type, matcher_value],
+            |r| r.get(0),
+        )?;
+
+        if exists == 0 {
+            conn.execute(
+                "INSERT INTO app_rules (id, matcher_type, matcher_value, label, category, points_per_minute, enabled, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+                rusqlite::params![
+                    Uuid::new_v4().to_string(),
+                    matcher_type,
+                    matcher_value,
+                    label,
+                    category,
+                    ppm,
+                    now
+                ],
+            )?;
+        }
+    }
+
     Ok(())
 }

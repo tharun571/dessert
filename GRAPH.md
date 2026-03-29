@@ -14,9 +14,9 @@ graph TB
         content -->|"active_scroll_ms samples"| background
     end
 
-    subgraph TAURI["tauri app (macOS)"]
+    subgraph TAURI["tauri app (macOS + Windows)"]
         subgraph THREADS["background threads"]
-            tracker["tracker.rs<br/>lsappinfo + CoreGraphics<br/>60s tick loop"]
+            tracker["tracker.rs<br/>platform app detection + idle APIs<br/>60s tick loop"]
             bridge["browser_bridge.rs<br/>HTTP :43137<br/>grace period logic"]
         end
 
@@ -302,7 +302,7 @@ sequenceDiagram
     FE->>FE: start 1s timer, show score +5
 
     loop every 60s
-        TK->>TK: lsappinfo front → ASN → info
+        TK->>TK: platform app lookup + idle check
         TK->>DB: SELECT app_rules WHERE bundle_id matches
         TK->>DB: SELECT sessions WHERE state='active'
         TK->>DB: INSERT raw_events

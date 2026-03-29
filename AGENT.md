@@ -6,7 +6,7 @@
 
 ## what is this
 
-**dessert** is a macOS productivity gamification app built with Tauri v2. you earn points for deep work (tracked via macOS app detection), lose points for doomscrolling X/LinkedIn/YouTube (tracked via a browser extension), and spend points on real rewards (naps, food, breaks).
+**dessert** is a desktop productivity gamification app for macOS and Windows built with Tauri v2. you earn points for deep work (tracked via native foreground-app detection), lose points for doomscrolling X/LinkedIn/YouTube (tracked via a browser extension), and spend points on real rewards (naps, food, breaks).
 
 ---
 
@@ -63,11 +63,11 @@ dessert/
       Cargo.toml                   — rust dependencies
       src/
         main.rs                    — binary entry (just calls lib::run())
-        lib.rs                     — AppState struct, Tauri builder, command registrations, macOS menu-bar timer
+        lib.rs                     — AppState struct, Tauri builder, command registrations, tray setup
         db.rs                      — sqlite open + WAL mode + full schema migration + ALTER TABLE migrations
         models.rs                  — all rust structs (Session, Task, Reward, SessionEndStats, DayPlanningStatus, ...)
-        seeds.rs                   — default rewards, app_rules, site_rules (runs once on first launch)
-        tracker.rs                 — macOS background thread: app detection + scoring + combo milestones
+        seeds.rs                   — default rewards, app_rules, site_rules (+ windows app-rule backfill)
+        tracker.rs                 — platform-specific background thread: app detection + scoring + combo milestones
         browser_bridge.rs          — HTTP server on :43137 receiving extension scroll events
         commands/
           mod.rs                   — declares all command submodules
@@ -79,7 +79,7 @@ dessert/
           rules.rs                 — rules_get_all, rules_upsert_app_rule, rules_upsert_site_rule
           tracker.rs               — tracker_get_status (reads TrackerState)
 
-  extensions/arc-tracker/          — MV3 chrome/arc browser extension
+  extensions/arc-tracker/          — MV3 Chromium browser extension
     manifest.json                  — targets x.com, twitter.com, linkedin.com, youtube.com
     content.js                     — runs on target sites, tracks scroll/focus, sends to background
     background.js                  — batches samples, POSTs to http://127.0.0.1:43137/events
@@ -250,12 +250,14 @@ pub struct AppState {
 
 ---
 
-## tracker.rs — macOS app scoring
+## tracker.rs — platform app scoring
 
 Background thread, 60s tick (5s startup delay). No special permissions needed.
 
-- **`get_frontmost_app()`** — two-step: `lsappinfo front` returns the ASN (e.g. `ASN:0x0-0x10010:`), then `lsappinfo info <ASN>` returns full details including `name` and `bundleID`. This is required on macOS 15+ where `lsappinfo front` no longer inlines app details.
-- **`get_idle_seconds()`** — calls CoreGraphics `CGEventSourceSecondsSinceLastEventType` via extern C
+- **macOS `get_frontmost_app()`** — two-step: `lsappinfo front` returns the ASN (e.g. `ASN:0x0-0x10010:`), then `lsappinfo info <ASN>` returns full details including `name` and `bundleID`. This is required on macOS 15+ where `lsappinfo front` no longer inlines app details.
+- **macOS `get_idle_seconds()`** — calls CoreGraphics `CGEventSourceSecondsSinceLastEventType` via extern C
+- **Windows `get_frontmost_app()`** — uses `GetForegroundWindow` + `GetWindowThreadProcessId` + `OpenProcess` + `QueryFullProcessImageNameW`, then uses the executable stem as `app_name`
+- **Windows `get_idle_seconds()`** — uses `GetLastInputInfo`
 - AFK threshold: 600s of idle → stop scoring, mark idle
 - when idle and a session is live, tracker auto-pauses that active session
 - Scoring in active session: −3/min for negative apps
@@ -274,7 +276,7 @@ elapsed calculation: `((now - started_at).num_milliseconds() - paused_ms) / 60_0
 
 ## browser_bridge.rs — localhost HTTP server
 
-Binds `127.0.0.1:43137`. Receives POST batches from the Arc/Chrome extension.
+Binds `127.0.0.1:43137`. Receives POST batches from the Chromium browser extension.
 
 **Grace period logic per domain:**
 1. accumulate `active_scroll_ms` per visit
@@ -301,15 +303,16 @@ Binds `127.0.0.1:43137`. Receives POST batches from the Arc/Chrome extension.
 
 ---
 
-## macOS menu-bar timer
+## tray behavior
 
-Implemented in `src-tauri/src/lib.rs` (macOS-gated):
-- creates a tray/menu-bar item with a title that updates every second
+Implemented in `src-tauri/src/lib.rs`:
+- macOS creates a menu-bar item with a title that updates every second
 - displays `00:00` with no session
 - displays elapsed timer for unplanned active sessions
 - displays remaining timer for planned sessions (and `⏸` when paused)
 - auto-ends active planned sessions when remaining reaches zero
-- tray click restores/focuses the main window, tray menu includes `Quit`
+- macOS tray click restores/focuses the main window, tray menu includes `Quit`
+- Windows creates a standard tray icon with restore/focus on left click and `Quit` in the tray menu; it does not expose the live timer title
 
 ---
 
@@ -411,13 +414,15 @@ most UI copy is lowercase ("dessert", "quests", "start session"), with intention
 
 ## seeds.rs — first-launch defaults
 
-Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
+Runs `seed_if_empty()` on startup. Core seed data is inserted only when the table is empty; Windows-specific app rules are backfilled idempotently on Windows startup.
 
 **Default rewards:** Nap (50pt), Cold drink (100pt), 1 TV episode (250pt), X break (250pt, suppresses "x" 20min), YouTube break (250pt, suppresses "youtube" 20min), Ice cream (500pt), Biriyani (500pt), Evening with the boys (750pt), Smoke (1000pt, 2h cooldown)
 
 **Default positive apps:** Zed, VS Code, Cursor, Terminal, iTerm2, Warp, Notion, Obsidian, Linear, MongoDB Compass
+**Windows-only positive backfills:** Windows Terminal, MongoDB Compass executable stem (`MongoDBCompass`)
 
 **Default neutral apps:** Finder, Preview, Calendar, Mail, Slack
+**Windows-only neutral backfills:** File Explorer (`explorer`)
 
 **Default site rules:** negative = x.com, twitter.com, linkedin.com, youtube.com (300s grace, −3/min session, −1/min ambient); positive = github.com, chat.openai.com, claude.ai.
 
@@ -467,5 +472,6 @@ Runs `seed_if_empty()` on startup. Only seeds if the table is empty.
 - **task_mark_done is idempotent** — reads `status` before awarding points. calling it twice on a done task is safe (no double points).
 - **session_end_stats uses `>=` for record comparison** — a session that ties the record is considered a record. this means the first session of the day is always "longest today".
 - **lsappinfo two-step** — `lsappinfo front` only returns the ASN on macOS 15+. must follow with `lsappinfo info <ASN>` to get name/bundleID. using just `lsappinfo front` output for parsing will silently return nothing.
+- **windows tracker naming** — windows app matching uses the executable stem as `app_name` (for example `WindowsTerminal`, `explorer`, `MongoDBCompass`), so new Windows defaults should usually be `matcher_type='app_name'`.
 - **rusqlite positional params** — if using `?1` multiple times in a query, only pass ONE value in `params![]` (SQLite counts unique param indices, not occurrences). using `params![val, val]` for a query with two `?1` references causes a "wrong number of parameters" error that silently returns unwrap_or default.
 - **habit unlog deletes the score event** — `unlog_habit` does `DELETE FROM score_events WHERE reason_code=? AND date(ts)=? AND delta > 0`. this means the habit's points disappear from total score cleanly, but there's no audit trail that it was ever logged.

@@ -10,9 +10,9 @@ use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
 use std::time::Duration;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 
@@ -24,8 +24,8 @@ pub struct AppState {
 
 #[cfg(target_os = "macos")]
 const MENU_TIMER_TRAY_ID: &str = "menu_timer";
-#[cfg(target_os = "macos")]
-const MENU_TIMER_QUIT_ID: &str = "quit";
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const TRAY_QUIT_ID: &str = "quit";
 
 #[cfg(target_os = "macos")]
 fn parse_rfc3339_utc(ts: &str) -> Option<DateTime<Utc>> {
@@ -141,7 +141,7 @@ fn setup_menu_bar_timer<R: tauri::Runtime + 'static>(
     app: &tauri::App<R>,
     db: Arc<Mutex<rusqlite::Connection>>,
 ) -> tauri::Result<()> {
-    let quit = MenuItemBuilder::with_id(MENU_TIMER_QUIT_ID, "Quit").build(app)?;
+    let quit = MenuItemBuilder::with_id(TRAY_QUIT_ID, "Quit").build(app)?;
     let tray_menu = MenuBuilder::new(app).item(&quit).build()?;
 
     let mut tray = TrayIconBuilder::with_id(MENU_TIMER_TRAY_ID)
@@ -150,7 +150,7 @@ fn setup_menu_bar_timer<R: tauri::Runtime + 'static>(
         .icon_as_template(true)
         .show_menu_on_left_click(false)
         .on_menu_event(|app_handle, event| {
-            if event.id().as_ref() == MENU_TIMER_QUIT_ID {
+            if event.id().as_ref() == TRAY_QUIT_ID {
                 app_handle.exit(0);
             }
         })
@@ -177,6 +177,41 @@ fn setup_menu_bar_timer<R: tauri::Runtime + 'static>(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn setup_windows_tray<R: tauri::Runtime + 'static>(app: &tauri::App<R>) -> tauri::Result<()> {
+    let quit = MenuItemBuilder::with_id(TRAY_QUIT_ID, "Quit").build(app)?;
+    let tray_menu = MenuBuilder::new(app).item(&quit).build()?;
+
+    let mut tray = TrayIconBuilder::with_id("main_tray")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app_handle, event| {
+            if event.id().as_ref() == TRAY_QUIT_ID {
+                app_handle.exit(0);
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
+                if let Some(window) = tray.app_handle().get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+
+    let _ = tray.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -196,14 +231,16 @@ pub fn run() {
             let tracker_state = Arc::new(Mutex::new(tracker::TrackerState::default()));
             let bridge_state = Arc::new(Mutex::new(browser_bridge::BridgeState::new()));
 
-            // Start macOS background tracker
+            // Start platform tracker
             tracker::start(Arc::clone(&db), Arc::clone(&tracker_state));
 
-            // Start localhost HTTP bridge for Arc extension
+            // Start localhost HTTP bridge for the browser extension
             browser_bridge::start(Arc::clone(&db), Arc::clone(&bridge_state));
 
             #[cfg(target_os = "macos")]
             setup_menu_bar_timer(app, Arc::clone(&db))?;
+            #[cfg(target_os = "windows")]
+            setup_windows_tray(app)?;
 
             app.manage(AppState {
                 db,
